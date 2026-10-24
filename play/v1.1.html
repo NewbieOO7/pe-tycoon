@@ -1,0 +1,1243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>PE Tycoon</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one-column game console. Status strip, then the current phase, portfolio and hand, then the deal log. Plain on purpose: v1 tests mechanics, not looks. */
+:root{
+  --bg:#eef0ec; --panel:#fbfcfa; --ink:#18201b; --muted:#5b675f; --line:#d3d9d3;
+  --accent:#1d6b47; --accent-ink:#ffffff; --good:#1d7a3e; --warn:#8f5b00; --bad:#b42318;
+  --chip:#e3e8e3; --sel:#d3eadc; --scrim:rgb(10 16 12 / .55);
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1411; --panel:#171e1a; --ink:#e3eae5; --muted:#95a299; --line:#2b362f;
+  --accent:#4fbf86; --accent-ink:#0b130e; --good:#62d394; --warn:#e3a94a; --bad:#ff7d6e;
+  --chip:#222c26; --sel:#1d3a2a; --scrim:rgb(0 0 0 / .65); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1411; --panel:#171e1a; --ink:#e3eae5; --muted:#95a299; --line:#2b362f;
+  --accent:#4fbf86; --accent-ink:#0b130e; --good:#62d394; --warn:#e3a94a; --bad:#ff7d6e;
+  --chip:#222c26; --sel:#1d3a2a; --scrim:rgb(0 0 0 / .65); color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+#app{max-width:980px;margin:0 auto;padding-block:12px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:12px}
+h1,h2,h3{margin:0;text-wrap:balance} h1{font-size:24px} h2{font-size:17px} h3{font-size:14px}
+p{margin:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.muted{color:var(--muted)} .small{font-size:12px}
+.good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+.btn{font:inherit;padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer;text-align:left}
+.btn:hover:not(:disabled){border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn .sub{display:block;font-size:12px;opacity:.8;font-weight:400}
+.btn.illegal{border-color:var(--bad)} .btn.gray{border-color:var(--warn)}
+.tag{font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:1px 6px;border-radius:4px;border:1px solid currentColor;white-space:nowrap;align-self:flex-start}
+.tag.illegal{color:var(--bad)} .tag.gray{color:var(--warn)} .tag.legal{color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:6px 10px}
+.stat{display:flex;flex-direction:column;min-width:0;text-align:left;background:none;border:0;padding:0;color:inherit;font:inherit}
+button.stat{cursor:pointer;border-radius:4px} button.stat:hover .k{color:var(--accent)}
+.stat .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.stat .v{font-variant-numeric:tabular-nums;font-weight:600;font-family:var(--mono);font-size:13px}
+.stat .x{font-size:11px;color:var(--muted)}
+.term{font-size:9px;opacity:.65;text-transform:none;letter-spacing:0;margin-left:4px;font-family:var(--mono)}
+.status{position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.co{border:1px solid var(--line);border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.co.target{border-color:var(--accent)}
+.co-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline}
+.pill{font-size:11px;padding:1px 8px;border-radius:99px;background:var(--chip);white-space:nowrap}
+.pill.Failing,.pill.Danger{color:var(--bad)} .pill.Thriving,.pill.Safe{color:var(--good)} .pill.Risky{color:var(--warn)}
+.traits{display:flex;flex-direction:column;gap:2px;font-size:12px;margin:0;padding:0;list-style:none}
+.grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.hand{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.cardb{display:flex;flex-direction:column;gap:4px;min-height:110px}
+.cardb.selected{border-color:var(--accent);background:var(--sel)}
+.cardb .top{display:flex;justify-content:space-between;gap:6px;align-items:center}
+.cardb .cost{font-family:var(--mono);font-weight:700;white-space:nowrap}
+.cardb .desc{font-size:12px;opacity:.85}
+.preview{background:var(--sel);border-radius:6px;padding:8px;font-size:12px;display:flex;flex-direction:column;gap:2px}
+.preview b{font-family:var(--mono)}
+.map{display:grid;grid-template-columns:64px repeat(3,minmax(0,1fr));gap:6px;align-items:stretch}
+.map .yr{font-size:11px;color:var(--muted);align-self:center;line-height:1.2}
+.map .node{text-align:center;padding:10px 4px}
+.map .node.here{background:var(--sel);border-color:var(--accent)}
+.map .boss{grid-column:2 / span 3;text-align:center;font-weight:600}
+.log{font-size:12px;display:flex;flex-direction:column;gap:3px;max-height:260px;overflow:auto}
+.log .y{font-family:var(--mono);color:var(--muted);margin-right:6px}
+.bar{height:8px;border-radius:4px;background:var(--chip);overflow:hidden;position:relative}
+.bar>i{display:block;height:100%;background:var(--accent)}
+.bar.heat>i,.bar.doubt>i,.bar.rival>i{background:var(--bad)}
+.bar .mark{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);left:50%}
+#modal{position:fixed;inset:0;background:var(--scrim);z-index:20;display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+#modal[hidden]{display:none!important}
+#modal .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;max-width:540px;width:100%;max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:12px}
+#modal .choices{display:flex;flex-direction:column;gap:8px}
+input[type=text]{font:inherit;padding:8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%;max-width:320px}
+input[type=range]{width:100%}
+table{border-collapse:collapse;font-size:12px;width:100%} td,th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left} td.n,th.n{font-family:var(--mono);text-align:right}
+tr.on td{font-weight:700}
+.tablewrap{overflow-x:auto}
+.paper{border:2px solid var(--ink);padding:12px;display:flex;flex-direction:column;gap:6px}
+.paper h2{font-family:Georgia,"Times New Roman",serif;font-size:22px;text-align:center;border-bottom:1px solid var(--ink);padding-bottom:6px}
+.paper li{font-family:Georgia,"Times New Roman",serif}
+.boss-q{font-size:16px;font-style:italic}
+details summary{cursor:pointer}
+footer{font-size:11px;color:var(--muted);text-align:center}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal" hidden></div>
+
+<script>
+'use strict';
+const VERSION = '1.1';
+const SAVE_KEY = 'pe_tycoon_save_v11';
+const HALL_KEY = 'pe_tycoon_hall';
+
+/* ---------- state ---------- */
+let S = null;          // game state (serializable)
+let Q = [];            // modal queue (transient)
+let pending = null;    // continuation to run once the modal queue empties
+let sel = null;        // selected hand index
+let PREVIEW = false;   // true while simulating a card for its preview
+let titleFounder = 'banker';
+
+/* ---------- rng & helpers ---------- */
+function rand(){if(PREVIEW)return 0.5;S.rs=(S.rs+0x6D2B79F5)|0;let t=S.rs;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;}
+const rf=(a,b)=>a+(b-a)*rand();
+const ri=(a,b)=>Math.floor(rf(a,b+1));
+const pick=a=>a[Math.floor(rand()*a.length)];
+const chance=p=>rand()<p;
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(rand()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function wpick(o){let t=0;for(const k in o)t+=o[k];let r=rand()*t;for(const k in o){r-=o[k];if(r<0)return k;}return Object.keys(o)[0];}
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const esc=s=>String(s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+function fm(x){const n=Math.abs(x),s=x<0?'−':'';if(n>=1000)return s+'$'+(n/1000).toFixed(2)+'B';if(n>=100)return s+'$'+n.toFixed(0)+'M';return s+'$'+n.toFixed(1)+'M';}
+const pct=x=>(x>=0?'+':'−')+Math.abs(x*100).toFixed(1)+'%';
+const sc=()=>S.fund.size/50;
+const calYear=()=>2026+(S.fund.n-1)*7+S.year;
+const FUNDNAMES=['Fund I','Fund II','Fund III'];
+const T=(label,real)=>`${label}<span class="term">${real}</span>`;
+
+/* ---------- data ---------- */
+const SECTORS={
+  'Dental':{mult:9,suf:['Dental Partners','Smile Group','Family Dentistry']},
+  'Laundromats':{mult:5,suf:['Suds Co.','Wash & Fold','Laundry Centers']},
+  'HVAC':{mult:7,suf:['Heating & Air','Comfort Systems','Climate Services']},
+  'Software':{mult:12,suf:['Logic','Cloudworks','Data Systems']},
+  'Restaurants':{mult:6,suf:['Diner Group','Burger Co.','Pizza Kitchens']},
+  'Trucking':{mult:5,suf:['Freight','Haulers','Logistics']},
+  'Pet Care':{mult:10,suf:['Pet Resorts','Animal Hospitals','Grooming Co.']},
+  'Manufacturing':{mult:6,suf:['Fasteners','Tool & Die','Plastics']}
+};
+const PREFIX=['Midwest','Summit','Blue Ridge','Lakeside','Ironwood','Sunbelt','Pioneer','Harbor','Copperline','Prairie','Northstar','Bayou','Redwood','Keystone','Cedar Valley','Gulf Coast','Twin Rivers','Old Mill','High Plains','Silver Creek','Granite','Bluewater','Foxhollow','Tri-County'];
+
+const TRAITS={
+  cooked:{n:'Cooked Books',bad:true,d:'Reported profit is about 25% inflated.'},
+  lawsuit:{n:'Pending Lawsuit',bad:true,d:'A settlement of about 1.5× yearly profit lands in year 2.'},
+  keyperson:{n:'Key-Person Risk',bad:true,d:'The founder runs everything. Replacing the CEO backfires, and they may quit.'},
+  concentration:{n:'Customer Concentration',bad:true,d:'One customer is a quarter of sales and may leave.'},
+  union:{n:'Union Trouble',bad:true,d:'Cost cuts and layoffs trigger strikes.'},
+  maintenance:{n:'Deferred Maintenance',bad:true,d:'About 1× yearly profit of surprise repairs in year 1.'},
+  realestate:{n:'Hidden Real Estate',bad:false,d:'Owns valuable property. Breakups and sale-leasebacks pay more.'},
+  pricing:{n:'Pricing Power',bad:false,d:'Customers tolerate price hikes. Raise Prices is doubled.'},
+  patent:{n:'Unused Patent',bad:false,d:'May license for a cash windfall.'},
+  loyal:{n:'Loyal Customers',bad:false,d:'Grows about 2% faster than the numbers show.'},
+  bloated:{n:'Bloated Costs',bad:false,d:'Fat to trim. Cut Costs is doubled.'},
+  founder:{n:'Motivated Seller',bad:false,d:'The founder wants out. Price drops 12% once you know.'}
+};
+
+const RIVALS=[
+  {name:'Kestrel Partners',bias:0.12,loves:null},
+  {name:'Monolith Capital',bias:0,loves:'Manufacturing'},
+  {name:'Vantablack Growth',bias:0.04,loves:'Software'}
+];
+
+const FOUNDERS={
+  banker:{n:'Ex-Investment Banker',lev:5,bw:3,op:0.8,rate:-0.005,conn:'insider',
+    deck:['cut','cut','raise','recap','refi','paydown','consult','network','slb'],
+    d:'Banks lend you up to 5× a company’s yearly profit, at 0.5% less interest. Starts with the Auction Insider. Operational cards are 20% weaker. 3 actions a year.'},
+  operator:{n:'Former Operator',lev:3.5,bw:4,op:1.25,rate:0,conn:'guru',
+    deck:['cut','cut','raise','raise','ceo','overhaul','consult','network','pivot'],
+    d:'Operational cards are 25% stronger and you get 4 actions a year. Starts with the Turnaround Guru. Banks lend at most 3.5× yearly profit.'}
+};
+
+const CONNS={
+  banker:{n:'Friendly Banker',d:'Banks lend 1× yearly profit more on every deal.'},
+  golf:{n:"Senator's Golf Buddy",d:'The first investigation each fund is quietly dropped.'},
+  mckinsey:{n:'Ex-Consultant Associate',d:'Your first Cut Costs each year costs 0 actions.'},
+  whisper:{n:'Pension Fund Whisperer',d:'Fundraising targets are 15% lower.'},
+  barbarians:{n:'Dog-Eared "Barbarians at the Gate"',d:'Each diligence round reveals 2 traits.'},
+  prfirm:{n:'PR Firm on Retainer',d:'The first reporter each fund is handled for free.'},
+  cayman:{n:'Cayman Lawyer',d:'Your bonus +25%. Heat +3 every year.'},
+  insider:{n:'Auction Insider',d:"See roughly where the top rival will walk away in auctions and takeover fights."},
+  guru:{n:'Turnaround Guru',d:'Shrinking companies you buy get +4% growth.'},
+  rolodex:{n:'Rolodex of CFOs',d:'Draw 1 extra card each year.'},
+  dog:{n:'Office Dog',d:'Reputation +1 every year.'},
+  vulture:{n:'Distressed Debt Desk',d:'Distressed deals are 10% cheaper.'},
+  shredder:{n:'Shredder Pro 3000',d:'Evidence goes cold 2 years sooner.'},
+  hype:{n:'Hype Machine',d:'Strategic sales in the hot sector pay 10% more.'},
+  club:{n:'Club Membership',d:'Conference prices −20% and one extra card on offer.'},
+  second:{n:'Second Chair',d:'+1 action every year.'}
+};
+
+const LAWS={
+  loophole:{n:'Carried Interest Loophole',d:'Your bonus is taxed like a capital gain. Bonus ×1.5.'},
+  interest:{n:'Interest Deduction Expansion',d:'Interest costs −30% at every company.'},
+  antitrust:{n:'Antitrust Relaxation',d:'Antitrust reviews clear automatically. Platform premium doubles.'}
+};
+
+const OFF_NAMES=['Dale Pruitt','Anne Holloway','Wade Kimball','Rita Vasquez','Hugh Barnaby','Lorraine Cobb','Gus Feeney','Priya Natarajan','Bo Whitlock','Marjorie Tull','Felix Ortega','Constance Reed'];
+const OFF_TRAITS={
+  greedy:{n:'Greedy',d:'Takes the money and delivers.'},
+  unreliable:{n:'Unreliable',d:'Takes the money. Delivers nothing.'},
+  bought:{n:'Already Bought',d:'Works for a rival firm.'},
+  honest:{n:'Honest',d:'Will report you.'},
+  sting:{n:'Wired',d:'Cooperating with prosecutors.'},
+  escalator:{n:'Escalator',d:'Delivers, then keeps asking for more.'}
+};
+
+/* ---------- small state helpers ---------- */
+const hasConn=k=>S.conns.includes(k);
+const has=(c,k)=>c.traits.some(t=>t.k===k);
+function trig(c,k){const t=c.traits.find(t=>t.k===k);if(t)t.rev=true;return !!t;}
+function dropTrait(c,k){c.traits=c.traits.filter(t=>t.k!==k);}
+const OPM=()=>FOUNDERS[S.founder].op;
+function rep(d){S.rep=clamp(S.rep+d,0,100);}
+function heat(d){S.heat=clamp(S.heat+d,0,100);}
+function log(msg,cls){S.log.unshift({y:`${FUNDNAMES[S.fund.n-1]} Y${S.year}`,msg,cls:cls||''});if(S.log.length>80)S.log.length=80;}
+function news(s){S.news.unshift(`${calYear()}: ${s}`);}
+const co=id=>S.companies.find(c=>c.id===id);
+const bribeCost=()=>0.8*sc();
+function levCap(){return FOUNDERS[S.founder].lev+(hasConn('banker')?1:0);}
+function avgLoad(){const cs=S.companies.filter(c=>c.ebitda>0);if(!cs.length)return 0;return cs.reduce((s,c)=>s+c.debt,0)/cs.reduce((s,c)=>s+c.ebitda,0);}
+
+/* ---------- reputation, heat, economy ---------- */
+const REP_TIERS=[
+  {min:85,n:'Legendary',price:-0.10,d:'Sellers give you 10% off and offer you private deals.'},
+  {min:65,n:'Respected',price:-0.05,d:'Sellers give you 5% off and offer you private deals.'},
+  {min:45,n:'Known',price:0,d:'No special treatment.'},
+  {min:25,n:'Shady',price:0.05,d:'Sellers charge you 5% more.'},
+  {min:0,n:'Toxic',price:0.10,d:'Sellers charge you 10% more and auction houses won’t let you in.'}
+];
+const repTier=()=>REP_TIERS.find(t=>S.rep>=t.min);
+const HEAT_TIERS=[
+  {min:90,n:'Raid',d:'At year end the authorities raid your office: fund cash frozen for a year, every piece of evidence rolls at 50%.'},
+  {min:60,n:'Under watch',d:'Evidence surfaces 1.5× as often. Every crime has a 20% chance of getting caught on the spot.'},
+  {min:30,n:'Reporters circling',d:'Evidence surfaces more often.'},
+  {min:0,n:'Quiet',d:'Nobody is looking.'}
+];
+const heatTier=()=>HEAT_TIERS.find(t=>S.heat>=t.min);
+const SEV={1:{n:'minor',p:0.04,life:3},2:{n:'serious',p:0.07,life:5},3:{n:'severe',p:0.11,life:8}};
+function evLife(e){return Math.max(1,SEV[e.sev].life-(hasConn('shredder')?2:0));}
+function evChance(e){return Math.min(0.95,(SEV[e.sev].p+S.heat/200)*(S.heat>=60?1.5:1));}
+function addEvidence(crime,sev){
+  if(PREVIEW){S.evidence.push({id:0,crime,sev:sev||2,age:0});return;}
+  sev=sev||2;
+  if(S.heat>=60&&chance(0.2)){log(`Caught in the act: ${crime}.`,'bad');openCase(crime,sev>=3?2:1);return;}
+  S.evidence.push({id:S.uid++,crime,sev,age:0});
+}
+function moodOf(m){
+  if(m<0.85)return {n:'Cold',cls:'bad'};if(m<0.95)return {n:'Cool',cls:'warn'};if(m<1.05)return {n:'Normal',cls:''};if(m<1.15)return {n:'Warm',cls:'good'};return {n:'Hot',cls:'good'};
+}
+function genEconomy(){
+  const ph=rf(0,6.28);S.mktPlan=[];S.ratePlan=[];
+  for(let y=0;y<9;y++){const m=clamp(1+0.2*Math.sin(ph+y*0.95)+rf(-0.04,0.04),0.72,1.28);S.mktPlan.push(m);S.ratePlan.push(clamp(0.075-0.08*(m-1)+rf(-0.004,0.004),0.03,0.13));}
+  S.mktShift=0;S.rateShift=0;applyEconomy();
+}
+function applyEconomy(){S.mkt=clamp(S.mktPlan[S.year-1]+S.mktShift,0.5,1.5);S.rate=clamp(S.ratePlan[S.year-1]+S.rateShift,0.02,0.16);}
+function forecast(dy){const y=S.year-1+dy;if(y>8)return null;const f=Math.pow(0.5,dy);return {m:clamp(S.mktPlan[y]+S.mktShift*f,0.5,1.5),r:clamp(S.ratePlan[y]+S.rateShift*f,0.02,0.16)};}
+function loadPremium(l){return l<=2?-0.01:l<=3?0:l<=4?0.01:l<=5?0.025:l<=6?0.04:0.06;}
+
+/* ---------- valuation ---------- */
+function health(c){return c.growth<0?'Failing':c.growth>=0.08?'Thriving':'Steady';}
+function mult(c){
+  let m=SECTORS[c.sector].mult*S.mkt;
+  if(c.sector===S.hot)m*=1.25; if(c.sector===S.cold)m*=0.8;
+  const h=health(c); if(h==='Failing')m*=0.65; else if(h==='Thriving')m*=1.2;
+  m+=1.5*Math.log10(Math.max(c.ebitda,0.5));
+  m+=c.multBonus;
+  if(c.platform>=2)m+=S.laws.antitrust?2:1;
+  return Math.max(2,m);
+}
+function value(c){return Math.max(0,c.ebitda)*mult(c)*(1+(c.inflated||0));}
+function equity(c){return Math.max(0,value(c)-c.debt);}
+function nav(){return S.companies.reduce((s,c)=>s+equity(c),0);}
+function fundMoic(){const f=S.fund;return (f.cash+f.dist+nav())/f.size;}
+function largest(){return S.companies.slice().sort((a,b)=>value(b)-value(a))[0]||null;}
+function compRate(c,debt){const d=debt===undefined?c.debt:debt;const l=c.ebitda>0?d/c.ebitda:99;return Math.max(0.02,S.rate+loadPremium(l)+c.rateAdj+FOUNDERS[S.founder].rate)*(S.laws.interest?0.7:1);}
+// chance the bank takes this company next year (debt above 7x profit), by quick simulation
+function riskOf(c,debt){
+  const d0=debt===undefined?c.debt:debt;if(d0<=0||c.ebitda<=0)return d0>0?1:0;
+  const rate=compRate(c,d0),known=k=>c.traits.some(t=>t.rev&&t.k===k);let hits=0;const N=240;
+  for(let i=0;i<N;i++){
+    let e=c.ebitda*(1+c.growth+(Math.random()*0.06-0.03)*(c.growth<0?1.6:1));
+    if(Math.random()<0.12)e*=0.85;
+    if(known('concentration')&&Math.random()<0.18)e*=0.75;
+    let d=d0;const fcf=e*0.65-d*rate;d-=fcf>0?Math.min(d,fcf):fcf;
+    if(known('maintenance')&&c.yearsOwned===0)d+=e;
+    if(known('lawsuit')&&c.yearsOwned===1)d+=1.5*e;
+    if(d/e>7)hits++;
+  }
+  return hits/N;
+}
+function riskLabel(p){return p<0.05?{n:'Safe',cls:'Safe'}:p<0.25?{n:'Risky',cls:'Risky'}:{n:'Danger',cls:'Danger'};}
+
+/* ---------- companies ---------- */
+function genName(sector){
+  for(let i=0;i<30;i++){const n=`${pick(PREFIX)} ${pick(SECTORS[sector].suf)}`;if(!S.usedNames.includes(n)){S.usedNames.push(n);return n;}}
+  return `${pick(PREFIX)} ${sector} #${S.uid}`;
+}
+function genCompany(h,extraBad){
+  const sector=pick(Object.keys(SECTORS));
+  const g={Failing:[-0.12,-0.03],Steady:[0.01,0.06],Thriving:[0.08,0.16]}[h];
+  const e={Failing:[0.012,0.04],Steady:[0.02,0.06],Thriving:[0.02,0.05]}[h];
+  const c={id:S.uid++,name:genName(sector),sector,ebitda:S.fund.size*rf(e[0],e[1]),growth:rf(g[0],g[1]),
+    multBonus:0,debt:0,rateAdj:0,platform:0,traits:[],assetKnown:false,owned:false,yearsOwned:0,cost:0,
+    strategic:false,inflated:0,slb:false,aiwash:0,fakeBid:false};
+  const bad=['cooked','lawsuit','keyperson','concentration','union','maintenance'];
+  const good=['realestate','pricing','patent','loyal','bloated','founder'];
+  const nb={Failing:2,Steady:1,Thriving:chance(0.5)?1:0}[h]+(extraBad||0);
+  let ng={Failing:chance(0.5)?1:0,Steady:1,Thriving:1}[h]; if(chance(0.3))ng++;
+  shuffle(bad).slice(0,nb).forEach(k=>c.traits.push({k,rev:false}));
+  shuffle(good).slice(0,ng).forEach(k=>c.traits.push({k,rev:false}));
+  c.traits=shuffle(c.traits);
+  const v=value(c);
+  c.assetValue=v*({Failing:rf(0.9,1.5),Steady:rf(0.35,0.75),Thriving:rf(0.2,0.45)}[h])+(has(c,'realestate')?v*0.6:0);
+  if(has(c,'cooked'))c.ebitda/=0.75;
+  return c;
+}
+function makeOffer(c,kind,premium){if(kind!=='auction')premium*=1+repTier().price;const o={c,kind,premium,price:0,dd:0,ddMax:kind==='auction'?1:9,done:false,disc:false};recalcOffer(o);return o;}
+function recalcOffer(o){o.price=value(o.c)*o.premium*(o.disc?0.88:1);}
+function maxDebt(c,price){return Math.min(levCap()*c.ebitda,0.8*price);}
+function canFinance(c,price){return !S.frozen&&price-maxDebt(c,price)<=S.fund.cash+1e-9;}
+function ddCost(o){return 0.15*sc()+0.01*o.price;}
+
+/* ---------- cards ---------- */
+function strike(c){trig(c,'union');c.ebitda*=0.9;c.growth-=0.01;log(`Workers at ${c.name} walked out. Profit −10%, growth −1%.`,'bad');}
+function needCash(x){if(S.frozen){log('Your fund cash is frozen this year.','bad');return false;}if(S.fund.cash<x){log(`Not enough fund cash (${fm(x)} needed).`,'bad');return false;}S.fund.cash-=x;return true;}
+function needPersonal(x){if(S.personal<x){log(`Not enough personal money (${fm(x)} needed).`,'bad');return false;}S.personal-=x;return true;}
+const CARDS={
+  cut:{n:'Cut Costs',c:1,t:'co',r:'common',tier:'legal',d:'Profit +8%. Doubled with Bloated Costs. Union Trouble causes a strike.',
+    p:c=>{let g=0.08*OPM();if(trig(c,'bloated'))g*=2;c.ebitda*=1+g;log(`Cut costs at ${c.name}: profit ${pct(g)}.`);if(has(c,'union'))strike(c);}},
+  raise:{n:'Raise Prices',c:1,t:'co',r:'common',tier:'legal',d:'Profit +6%. Doubled with Pricing Power.',odds:'25% chance customers leave: growth −1% (not with Pricing Power).',
+    p:c=>{let g=0.06*OPM();if(trig(c,'pricing'))g*=2;else if(chance(0.25)){c.growth-=0.01;log(`Some ${c.name} customers left over the price hike. Growth −1%.`,'bad');}c.ebitda*=1+g;log(`Raised prices at ${c.name}: profit ${pct(g)}.`);}},
+  ceo:{n:'Replace the CEO',c:2,t:'co',r:'common',tier:'legal',d:'Growth +3% (to at least +2%), profit +3%. Backfires with Key-Person Risk.',
+    p:c=>{if(trig(c,'keyperson')){c.ebitda*=0.8;dropTrait(c,'keyperson');log(`The founder of ${c.name} left with the customer list. Profit −20%.`,'bad');return;}
+      c.growth=Math.max(c.growth+0.03*OPM(),0.02);c.ebitda*=1.03;log(`New CEO at ${c.name}. Growth now ${pct(c.growth)}.`);}},
+  overhaul:{n:'Process Overhaul',c:2,t:'co',r:'common',tier:'legal',d:'Growth +3%.',
+    p:c=>{c.growth+=0.03*OPM();log(`Process overhaul at ${c.name}. Growth now ${pct(c.growth)}.`);}},
+  consult:{n:'Hire Consultants',c:1,t:'co',r:'common',tier:'legal',d:'Reveal every hidden trait and the breakup value. Profit +3%.',
+    p:c=>{c.traits.forEach(t=>t.rev=true);c.assetKnown=true;c.ebitda*=1.03;log(`Consultants finished their deck on ${c.name}. Everything is on the table.`);}},
+  recap:{n:'Dividend Recap',c:1,t:'co',r:'common',tier:'gray',d:'Borrow 1.5× yearly profit more and pay it straight out to investors. Reputation −2.',
+    p:c=>{const nd=1.5*c.ebitda;if((c.debt+nd)/c.ebitda>levCap()+1.5){log(`Banks refuse to lend ${c.name} any more.`,'bad');return false;}
+      c.debt+=nd;S.fund.dist+=nd;rep(-2);log(`Dividend recap at ${c.name}: ${fm(nd)} paid out.`);}},
+  slb:{n:'Sale-Leaseback',c:1,t:'co',r:'common',tier:'gray',d:'Sell the property and rent it back: pays out 35% of breakup value. Profit −8%. Once per company.',
+    p:c=>{if(c.slb){log(`${c.name} has nothing left to sell and lease back.`,'bad');return false;}
+      let cash=c.assetValue*0.35;if(c.traits.some(t=>t.k==='realestate'&&(t.rev||!PREVIEW))){trig(c,'realestate');cash*=1.3;}c.assetValue-=cash;c.slb=true;c.assetKnown=true;c.ebitda*=0.92;S.fund.dist+=cash;
+      log(`Sale-leaseback at ${c.name}: ${fm(cash)} paid out.`);}},
+  refi:{n:'Refinance',c:1,t:'co',r:'common',tier:'legal',d:'Interest −1.5% at this company (down to −3%).',
+    p:c=>{if(c.rateAdj<=-0.03){log(`${c.name} is already on the best terms available.`,'bad');return false;}c.rateAdj-=0.015;log(`Refinanced ${c.name}.`);}},
+  addon:{n:'Add-On Acquisition',c:2,t:'co',r:'uncommon',tier:'legal',d:'Buy a small competitor at 5× its profit (half borrowed). Adds 25–40% profit and builds a platform.',odds:'Adds 25–40% profit. The preview shows the middle.',
+    p:c=>{const e=c.ebitda*rf(0.25,0.4),price=e*5*S.mkt,eq=price*0.5;if(!needCash(eq))return false;
+      c.debt+=price-eq;c.cost+=eq;c.ebitda+=e;c.platform++;log(`${c.name} bolted on a competitor for ${fm(price)}. Platform size ${c.platform}.`,'good');}},
+  digital:{n:'Digital Transformation',c:2,t:'co',r:'uncommon',tier:'legal',d:'Costs 40% of yearly profit in fund cash. Growth +5%.',
+    p:c=>{if(!needCash(0.4*c.ebitda))return false;c.cost+=0.4*c.ebitda;c.growth+=0.05*OPM();log(`${c.name} now has an app. Growth now ${pct(c.growth)}.`);}},
+  offshore:{n:'Offshore Production',c:1,t:'co',r:'uncommon',tier:'gray',d:'Profit +15%. Reputation −4.',
+    p:c=>{c.ebitda*=1.15;rep(-4);log(`Moved ${c.name} production overseas. Profit +15%.`);}},
+  layoffs:{n:'Mass Layoffs',c:1,t:'co',r:'common',tier:'gray',d:'Profit +12%, growth −1%. Reputation −3. Union Trouble causes a strike.',
+    p:c=>{c.ebitda*=1.12;c.growth-=0.01;rep(-3);log(`Layoffs at ${c.name}. Profit +12%.`);if(has(c,'union'))strike(c);}},
+  expand:{n:'Expand Overseas',c:2,t:'co',r:'uncommon',tier:'legal',d:'Costs 50% of yearly profit in fund cash. Growth +4%.',
+    p:c=>{if(!needCash(0.5*c.ebitda))return false;c.cost+=0.5*c.ebitda;c.growth+=0.04;log(`${c.name} opened overseas. Growth now ${pct(c.growth)}.`);}},
+  network:{n:'Networking Lunch',c:0,t:'none',r:'common',tier:'legal',d:'Draw 2 cards.',p:()=>{draw(2);log('Lunch at the club. Two new ideas.');}},
+  press:{n:'Puff-Piece Press Release',c:1,t:'none',r:'common',tier:'legal',d:'Reputation +4.',p:()=>{rep(4);log('A glowing profile ran in a trade magazine. Reputation +4.');}},
+  gala:{n:'Charity Gala',c:1,t:'none',r:'uncommon',tier:'legal',d:'Reputation +8. Costs personal money.',
+    p:()=>{if(!needPersonal(0.4*sc()))return false;rep(8);log('You hosted a gala for a children’s hospital. Reputation +8.','good');}},
+  lobby:{n:'Lobbyist Retainer',c:1,t:'none',r:'uncommon',tier:'legal',d:'Influence +2. Costs personal money.',
+    p:()=>{if(!needPersonal(0.3*sc()))return false;S.influence+=2;log('Lobbyist hired. Influence +2.');}},
+  cayman:{n:'Cayman Structure',c:1,t:'none',r:'uncommon',tier:'gray',d:'Route your fees offshore: personal money up. Heat +6.',
+    p:()=>{const x=0.6*sc();S.personal+=x;heat(6);log(`Fees routed through the Caymans: ${fm(x)} kept.`);}},
+  creative:{n:'Creative Accounting',c:0,t:'co',r:'uncommon',tier:'illegal',d:'This company’s value +40% until sold. Severe evidence, heat +12.',
+    p:c=>{if(c.inflated){log(`${c.name}’s numbers can’t be stretched any further.`,'bad');return false;}c.inflated=0.4;addEvidence('accounting fraud',3);heat(12);log(`${c.name}’s books got creative. Value +40%.`,'warn');}},
+  insider:{n:'Insider Tip',c:1,t:'none',r:'rare',tier:'illegal',d:'Trade on a tip: big personal payday. Serious evidence, heat +12.',
+    p:()=>{const x=4*sc();S.personal+=x;addEvidence('insider trading',2);heat(12);log(`A well-timed trade made you ${fm(x)}.`,'warn');}},
+  bribe:{n:'Envelope of Cash',c:1,t:'none',r:'uncommon',tier:'illegal',d:'Pay off an official: zoning (largest company profit +20%), a regulator (heat −30, one case closed) or a senator (influence +6).',
+    p:()=>{bribeCard();}},
+  shred:{n:'Shred Documents',c:1,t:'none',r:'uncommon',tier:'illegal',d:'Destroy your most dangerous evidence. 30% chance it creates new evidence. Heat +5.',
+    p:()=>{if(!S.evidence.length){log('Nothing to shred.');return false;}const e=S.evidence.slice().sort((a,b)=>b.sev-a.sev)[0];S.evidence=S.evidence.filter(x=>x!==e);heat(5);log(`Shredded the ${e.crime} paper trail.`,'warn');if(chance(0.3)){addEvidence('obstruction of justice',2);log('An intern saw you do it.','bad');}}},
+  spin:{n:'PR Spin Doctor',c:1,t:'none',r:'common',tier:'legal',d:'Heat −12.',p:()=>{heat(-12);log('The story changed. Heat −12.');}},
+  lawyer:{n:'Lawyers on Retainer',c:1,t:'none',r:'uncommon',tier:'legal',d:'Heat −6. Your next “hire lawyers” defense is guaranteed to work.',
+    p:()=>{heat(-6);S.lawyered=true;log('Top-tier lawyers on retainer.');}},
+  unionbust:{n:'Union Busting',c:1,t:'co',r:'uncommon',tier:'illegal',d:'Removes Union Trouble, profit +8%. Minor evidence, heat +8.',
+    p:c=>{dropTrait(c,'union');c.ebitda*=1.08;addEvidence('illegal union busting',1);heat(8);log(`Organizers at ${c.name} were “let go.” Profit +8%.`,'warn');}},
+  pivot:{n:'Strategic Pivot',c:2,t:'co',r:'uncommon',tier:'legal',d:'Growth becomes at least +4%. Profit −5%.',
+    p:c=>{c.growth=Math.max(c.growth,0.04*OPM());c.ebitda*=0.95;log(`${c.name} pivoted. Growth now ${pct(c.growth)}.`);}},
+  aiwash:{n:'AI-Wash the Brand',c:1,t:'co',r:'uncommon',tier:'gray',d:'Multiple +1.5 (twice per company at most). Reputation −1.',
+    p:c=>{if(c.aiwash>=2){log(`Nobody believes ${c.name} is an AI company anymore.`,'bad');return false;}c.aiwash++;c.multBonus+=1.5;rep(-1);log(`${c.name} is now “AI-powered.” Multiple +1.5.`);}},
+  offsite:{n:'Management Offsite',c:1,t:'none',r:'uncommon',tier:'legal',d:'Growth +1% at every company you own.',
+    p:()=>{S.companies.forEach(c=>c.growth+=0.01);log('Trust falls in Scottsdale. Growth +1% everywhere.');}},
+  paydown:{n:'Debt Paydown',c:1,t:'co',r:'common',tier:'legal',d:'Use fund cash to repay up to 1.5× yearly profit of this company’s debt.',
+    p:c=>{if(S.frozen){log('Your fund cash is frozen this year.','bad');return false;}const x=Math.min(c.debt,1.5*c.ebitda,S.fund.cash);if(x<=0){log('Nothing to pay down.','bad');return false;}S.fund.cash-=x;c.debt-=x;c.cost+=x;log(`Paid down ${fm(x)} of ${c.name}’s debt.`);}},
+  squeeze:{n:'Squeeze Suppliers',c:1,t:'co',r:'common',tier:'legal',d:'Profit +5%. Reputation −1.',
+    p:c=>{c.ebitda*=1.05;rep(-1);log(`${c.name} now pays suppliers in 120 days. Profit +5%.`);}},
+  greenwash:{n:'Greenwashing Report',c:1,t:'none',r:'uncommon',tier:'gray',d:'Reputation +6, heat +4.',odds:'35% chance of minor evidence.',
+    p:()=>{rep(6);heat(4);if(chance(0.35))addEvidence('misleading ESG claims',1);log('A glossy sustainability report. Lots of leaves on the cover.');}},
+  rig:{n:'Rig the Auction',c:1,t:'none',r:'rare',tier:'illegal',d:'Your next auction: rivals’ bids are “lost.” You win at the opening price. Serious evidence, heat +8.',
+    p:()=>{if(S.rigged){log('The fix is already in.','bad');return false;}S.rigged=true;addEvidence('bid rigging',2);heat(8);log('An auction house employee is now on your payroll.','warn');}},
+  fakebid:{n:'Fake Buyer',c:1,t:'co',r:'uncommon',tier:'illegal',d:'Invent a rival bidder: a strategic buyer pays 30% extra for this company this year. Serious evidence, heat +10.',
+    p:c=>{if(c.fakeBid){log(`${c.name} already has a fake buyer.`,'bad');return false;}c.fakeBid=true;c.strategic=true;addEvidence('fraudulent bidding',2);heat(10);log(`A “mystery buyer” is circling ${c.name}.`,'warn');}},
+  skim:{n:'Skim the Fund',c:1,t:'none',r:'rare',tier:'illegal',d:'Move 8% of fund cash into your own pocket. Severe evidence, heat +15.',
+    p:()=>{if(S.frozen){log('Your fund cash is frozen this year.','bad');return false;}const x=0.08*S.fund.cash;if(x<=0)return false;S.fund.cash-=x;S.personal+=x;addEvidence('embezzlement',3);heat(15);log(`${fm(x)} of fund cash found its way to your account.`,'warn');}},
+  pension:{n:'Bribe a Pension Manager',c:1,t:'none',r:'rare',tier:'illegal',d:'Fundraise score +0.3 this fund. Costs personal money. Severe evidence, heat +10.',odds:'25% they report you on the spot.',
+    p:()=>{if(!needPersonal(1.5*sc()))return false;if(chance(0.25)){heat(10);log('The pension manager reported you.','bad');openCase('bribing a pension manager',2);return;}S.pensionBribe=(S.pensionBribe||0)+0.3;addEvidence('bribing a pension manager',3);heat(10);log('A pension fund will be very generous next fundraise.','warn');}}
+};
+function cardCost(k){if(k==='cut'&&hasConn('mckinsey')&&!S.mckUsed)return 0;return CARDS[k].c;}
+function draw(n){for(let i=0;i<n;i++){if(!S.deck.length){S.deck=shuffle(S.discard);S.discard=[];}if(!S.deck.length)break;S.hand.push(S.deck.pop());}}
+function addCard(k){S.cards.push(k);S.discard.push(k);}
+function removeCard(k){const i=S.cards.indexOf(k);if(i<0)return;S.cards.splice(i,1);for(const pile of [S.deck,S.discard,S.hand]){const j=pile.indexOf(k);if(j>=0){pile.splice(j,1);return;}}}
+function draftCards(n,rareOnly){
+  const w={common:6,uncommon:3,rare:1};const out=[];
+  const keys=Object.keys(CARDS).filter(k=>!rareOnly||CARDS[k].r!=='common');
+  for(let t=0;t<60&&out.length<n;t++){const o={};keys.forEach(k=>{if(!out.includes(k))o[k]=w[CARDS[k].r];});out.push(wpick(o));}
+  return out;
+}
+function draftConns(n){return shuffle(Object.keys(CONNS).filter(k=>!S.conns.includes(k))).slice(0,n);}
+
+/* ---------- card preview ---------- */
+function snapshotMetrics(c){return {profit:c?c.ebitda:0,growth:c?c.growth:0,value:c?value(c):0,debt:c?c.debt:0,stake:c?equity(c):0,risk:c?riskOf(c):0,
+  cash:S.fund.cash,dist:S.fund.dist,personal:S.personal,rep:S.rep,heat:S.heat,inf:S.influence,ev:S.evidence.length,companies:S.companies.length};}
+function previewCard(k,cid){
+  const S0=S,q0=Q.length,p0=pending;let res;
+  try{
+    S=JSON.parse(JSON.stringify(S0));PREVIEW=true;
+    const c=cid!=null?co(cid):null;if(c)c.traits=c.traits.filter(t=>t.rev);
+    const before=snapshotMetrics(c);
+    const r=CARDS[k].p(c);
+    if(r===false)res={blocked:S.log[0]?S.log[0].msg:'Can’t play this here.'};
+    else{const c2=c?co(c.id):null;res={before,after:snapshotMetrics(c2)};}
+  }catch(e){res={blocked:'No preview available.'};}
+  finally{S=S0;PREVIEW=false;Q.length=q0;pending=p0;}
+  return res;
+}
+function previewHTML(k,cid){
+  const r=previewCard(k,cid);const C=CARDS[k];
+  if(r.blocked)return `<div class="preview"><span class="bad">${esc(r.blocked)}</span></div>`;
+  const b=r.before,a=r.after,L=[];
+  const line=(label,x,y,f,goodUp=true)=>{if(Math.abs(y-x)<1e-6)return;const up=y>x;L.push(`<div>${label}: <b>${f(x)}</b> → <b class="${up===goodUp?'good':'bad'}">${f(y)}</b></div>`);};
+  if(cid!=null){line('Yearly profit',b.profit,a.profit,fm);line('Growth',b.growth,a.growth,pct);line('Value',b.value,a.value,fm);line('Debt',b.debt,a.debt,fm,false);line('Your stake',b.stake,a.stake,fm);
+    if(Math.abs(a.risk-b.risk)>=0.03)line('Chance bank takes it',b.risk,a.risk,x=>Math.round(x*100)+'%',false);}
+  line('Fund cash',b.cash,a.cash,fm);line('Paid out',b.dist,a.dist,fm);line('Your money',b.personal,a.personal,fm);
+  line('Reputation',b.rep,a.rep,x=>Math.round(x));line('Heat',b.heat,a.heat,x=>Math.round(x),false);line('Influence',b.inf,a.inf,x=>Math.round(x));
+  if(a.ev>b.ev)L.push(`<div class="bad">Evidence +${a.ev-b.ev}</div>`);
+  if(!L.length)L.push('<div>No visible change.</div>');
+  if(C.odds)L.push(`<div class="warn">${C.odds}</div>`);
+  if(cid!=null){const c=co(cid);if(c&&c.traits.some(t=>!t.rev))L.push('<div class="muted">Hidden traits could change this.</div>');}
+  if(C.tier==='illegal'&&S.heat>=60)L.push('<div class="bad">Under watch: 20% chance you’re caught on the spot.</div>');
+  return `<div class="preview">${L.join('')}</div>`;
+}
+
+/* ---------- modals ---------- */
+const queue=m=>Q.push(m);
+const next=m=>Q.unshift(m);
+function info(title,body){return {title,body,choices:[{label:'Continue'}]};}
+function cardRewardModal(why){
+  const opts=draftCards(3);
+  return {title:'Add a Play to Your Playbook',body:`${why} Pick one card for your deck, or skip.`,
+    choices:opts.map(k=>({label:CARDS[k].n,sub:`${CARDS[k].c} action${CARDS[k].c===1?'':'s'} · ${CARDS[k].d}`,cls:CARDS[k].tier,fn:()=>{addCard(k);log(`Added ${CARDS[k].n} to your playbook.`);}})).concat([{label:'Skip'}])};
+}
+function connRewardModal(why){
+  const opts=draftConns(3);
+  if(!opts.length)return info('Connections','You already know everyone worth knowing.');
+  return {title:'You Made a Connection',body:why||'Winning that got you noticed. Choose one.',
+    choices:opts.map(k=>({label:CONNS[k].n,sub:CONNS[k].d,fn:()=>{S.conns.push(k);log(`New connection: ${CONNS[k].n}.`,'good');}}))};
+}
+
+/* ---------- bribery ---------- */
+function genOfficials(){const names=shuffle(OFF_NAMES);return ['Zoning Commissioner','Regulator','Senator'].map((role,i)=>({id:i,name:names[i],role,trait:wpick({greedy:35,unreliable:15,bought:15,honest:15,sting:10,escalator:10}),known:false,demand:false}));}
+function bribeModal(o){
+  const bc=bribeCost();const offs=S.officials.filter(x=>!o.role||x.role===o.role);const choices=[];
+  offs.forEach(of=>{
+    if(!of.known)choices.push({label:`Background check on ${of.name}`,sub:`${fm(bc*0.25)} personal · learn what they’re really like`,disabled:()=>S.personal<bc*0.25,
+      fn:()=>{S.personal-=bc*0.25;of.known=true;next(bribeModal(o));}});
+    choices.push({label:`Pay ${of.name}, ${of.role}`,sub:`${fm(bc)} personal · ${of.known?OFF_TRAITS[of.trait].n+': '+OFF_TRAITS[of.trait].d:'character unknown'}`,cls:'illegal',
+      disabled:()=>S.personal<bc,fn:()=>resolveBribe(of,bc,o)});
+  });
+  choices.push({label:'Back off',fn:()=>{o.onBackoff&&o.onBackoff();}});
+  return {title:'Envelope of Cash',body:`${o.purpose}<br><span class="muted small">You have ${fm(S.personal)} of personal money. Every bribe that lands leaves serious evidence.</span>`,choices};
+}
+function resolveBribe(of,bc,o){
+  S.personal-=bc;of.known=true;let msg='';
+  switch(of.trait){
+    case 'greedy':addEvidence('bribery',2);heat(4);msg=`${of.name} took the envelope and delivered.`;o.onSuccess(of);break;
+    case 'escalator':addEvidence('bribery',2);heat(4);of.demand=true;msg=`${of.name} delivered. Then smiled and said, “See you next year.”`;o.onSuccess(of);break;
+    case 'unreliable':addEvidence('bribery',2);msg=`${of.name} took the money and did nothing.`;o.onFail&&o.onFail();break;
+    case 'bought':heat(15);S.rivalBoost=true;msg=`${of.name} already works for ${pick(RIVALS).name}. They know your playbook now (rivals bid harder at your next auction). Heat +15.`;o.onFail&&o.onFail();break;
+    case 'honest':heat(20);msg=`${of.name} refused and called a reporter. Heat +20.`;o.onFail&&o.onFail();openCase('attempted bribery',1);break;
+    case 'sting':heat(25);msg=`${of.name} was wearing a wire. Heat +25.`;o.onFail&&o.onFail();openCase('bribery, on tape',3);break;
+  }
+  log(msg,of.trait==='greedy'||of.trait==='escalator'?'warn':'bad');
+  next(info('The Envelope',msg));
+}
+function bribeCard(){
+  queue(bribeModal({purpose:'Who gets the envelope? A zoning commissioner fast-tracks permits at your largest company (profit +20%). A regulator makes problems go away (heat −30, one case closed). A senator delivers votes (influence +6).',
+    onSuccess:of=>{
+      if(of.role==='Zoning Commissioner'){const c=largest();if(c){c.ebitda*=1.2;log(`Permits for ${c.name} came through overnight. Profit +20%.`);}}
+      else if(of.role==='Regulator'){heat(-30);const cs=S.cases[0];if(cs)closeCase(cs,'An investigation was quietly closed.');}
+      else{S.influence+=6;}
+    }}));
+}
+
+/* ---------- legal trouble ---------- */
+function openCase(crime,stage){
+  stage=stage||1;
+  if(hasConn('golf')&&!S.golfUsed){S.golfUsed=true;log(`A look into ${crime} was quietly dropped. Your golf buddy made a call.`,'good');return;}
+  if(stage===1&&hasConn('prfirm')&&!S.prUsed){S.prUsed=true;log(`A reporter asked about ${crime}. Your PR firm buried it.`,'good');return;}
+  const cs={id:S.uid++,crime,stage};S.cases.push(cs);queue(caseModal(cs));
+}
+function closeCase(cs,msg){S.cases=S.cases.filter(x=>x!==cs);if(msg)log(msg,'good');}
+function caseModal(cs){
+  const bc=bribeCost();
+  if(cs.stage===1)return {title:'A Reporter Is Asking Questions',body:`A journalist is digging into <b>${esc(cs.crime)}</b> at ${esc(S.firm)}.`,choices:[
+    {label:'Hire a crisis PR firm',sub:`${fm(0.5*bc)} personal · 60% the story dies`,disabled:()=>S.personal<0.5*bc,fn:()=>{S.personal-=0.5*bc;if(chance(0.6))closeCase(cs,'The story died.');else{cs.stage=2;cs.wait=true;rep(-5);log('The story ran anyway. Reputation −5. Regulators noticed.','bad');}}},
+    {label:'Call in a favor',sub:'Spend 2 influence · the editor spikes the story',disabled:()=>S.influence<2,fn:()=>{S.influence-=2;closeCase(cs,'The story was spiked.');}},
+    {label:'Stonewall',sub:'Heat +10 · 40% it goes away, otherwise regulators next year',fn:()=>{heat(10);if(chance(0.4))closeCase(cs,'The reporter moved on.');else{cs.stage=2;cs.wait=true;rep(-5);}}},
+    {label:'Leak dirt on a rival instead',sub:'Gray · reputation −2, minor evidence, story dies',cls:'gray',fn:()=>{rep(-2);addEvidence('leaking confidential information',1);closeCase(cs,`The press got distracted by a scandal at ${pick(RIVALS).name}.`);}}]};
+  if(cs.stage===2)return {title:'Regulators Open an Investigation',body:`The Securities Commission has opened a formal investigation into <b>${esc(cs.crime)}</b>. Reputation −5.`,choices:[
+    {label:'Hire top lawyers',sub:`${fm(1.5*bc)} personal · ${S.lawyered?'guaranteed (retainer)':'55% the case closes'}`,disabled:()=>S.personal<1.5*bc,fn:()=>{rep(-5);S.personal-=1.5*bc;const ok=S.lawyered||chance(0.55);S.lawyered=false;if(ok)closeCase(cs,'Your lawyers buried them in paperwork. Case closed.');else{cs.stage=3;cs.wait=true;log('The investigation is escalating.','bad');}}},
+    {label:'Cooperate and pay a fine',sub:`${fm(2*bc+0.15*S.personal)} (15% of your money) · reputation −10 · banned from auctions this fund`,disabled:()=>S.personal<2*bc,fn:()=>{rep(-5);S.personal-=Math.min(S.personal,2*bc+0.15*S.personal);rep(-10);S.auctionBan=true;news(`${S.firm} fined over ${cs.crime}.`);closeCase(cs,'Fine paid. Case closed. Auction houses won’t deal with you this fund.');}},
+    {label:'Call in big favors',sub:'Spend 4 influence · case dropped',disabled:()=>S.influence<4,fn:()=>{S.influence-=4;closeCase(cs,'Someone in Washington made the case go away.');}},
+    {label:'Obstruct',sub:'Illegal · 50% the case collapses, otherwise a subpoena now and more evidence',cls:'illegal',fn:()=>{rep(-5);if(chance(0.5))closeCase(cs,'Key documents went missing. The case collapsed.');else{addEvidence('obstruction of justice',3);heat(15);cs.stage=3;next(caseModal(cs));}}}]};
+  const fine=4*bc+0.35*S.personal;
+  return {title:'Subpoena',body:`Prosecutors are building a criminal case on <b>${esc(cs.crime)}</b>.`,choices:[
+    {label:'Blame your COO',sub:S.fallGuys<2?'Reputation −15 · case closes · works twice per career':'Nobody left to blame',disabled:()=>S.fallGuys>=2,fn:()=>{S.fallGuys++;rep(-15);news(`${S.firm} COO resigns amid ${cs.crime} probe.`);closeCase(cs,'Your COO took the fall.');}},
+    {label:'Settle without admitting wrongdoing',sub:`${fm(fine)} (35% of your money) · reputation −15 · your largest company is seized`,disabled:()=>S.personal<4*bc,fn:()=>{S.personal-=Math.min(S.personal,fine);rep(-15);const c=largest();if(c){S.companies=S.companies.filter(x=>x!==c);S.fund.lost++;news(`Regulators seize ${c.name} from ${S.firm}.`);}news(`${S.firm} settles ${cs.crime} charges, neither admitting nor denying wrongdoing.`);closeCase(cs,'Settled.');}},
+    {label:'Go to trial',sub:'40% acquittal. Otherwise prison: game over.',fn:()=>{if(chance(0.4)){rep(-5);news(`${S.firm} founder acquitted of ${cs.crime}.`);closeCase(cs,'Acquitted!');}else{news(`${S.firm} founder convicted of ${cs.crime}.`);gameOver('Convicted',`The jury did not buy it. You were convicted of ${cs.crime}.`);}}}]};
+}
+
+/* ---------- covenant & disposal ---------- */
+function breachModal(c){
+  const need=Math.max(0,c.debt-5*c.ebitda);
+  return {title:`The Bank Wants ${c.name}`,body:`${esc(c.name)}’s debt is ${(c.debt/c.ebitda).toFixed(1)}× its yearly profit. The bank’s limit is 7×. Put in money to bring it down to 5×, or the bank takes the company.`,choices:[
+    {label:`Rescue it with ${fm(need)} of fund cash`,sub:`You have ${fm(S.fund.cash)}`,disabled:()=>S.fund.cash<need||!!S.frozen,fn:()=>{if(!co(c.id))return;S.fund.cash-=need;c.debt-=need;c.cost+=need;log(`Injected ${fm(need)} into ${c.name}.`);}},
+    {label:'Let the bank take it',sub:'You lose the company. Reputation −5.',fn:()=>{if(co(c.id))handKeys(c);}}]};
+}
+function handKeys(c){S.companies=S.companies.filter(x=>x!==c);rep(-5);S.fund.lost++;S.fund.exits.push({name:c.name,moic:0,net:0});news(`${c.name} collapses under ${S.firm}’s debt.`);log(`Lost ${c.name} to the bank.`,'bad');}
+function salePE(c){return value(c)*0.97;}
+function saleStrat(c){return value(c)*(1.15+S.exitBoost+(c.fakeBid?0.3:0))*(c.sector===S.hot&&hasConn('hype')?1.1:1);}
+function saleBreak(c){return c.assetValue*0.95;}
+function realize(c,net,kind){
+  S.fund.dist+=net;S.companies=S.companies.filter(x=>x!==c);
+  const m=c.cost>0?net/c.cost:0;S.fund.exits.push({name:c.name,moic:m,net});
+  if(kind==='break'){rep(c.growth<0?-2:-5);news(`${c.name} broken up and sold for parts. ${ri(60,500)*Math.ceil(Math.sqrt(sc()))} jobs lost.`);}
+  else news(`${S.firm} sells ${c.name} to ${kind==='pe'?pick(RIVALS).name:kind==='family'?'the founding family':'a strategic buyer'} for ${fm(net+c.debt)}.`);
+  log(`Sold ${c.name}: ${fm(net)} paid out (${m.toFixed(2)}× your stake).`,'good');
+}
+
+/* ---------- events ---------- */
+function anyCo(){return S.companies.length?pick(S.companies):null;}
+const EVENTS=[
+  {id:'ceo',need:'co',make:c=>({title:'CEO Caught on Camera',body:`The CEO of <b>${esc(c.name)}</b> was filmed screaming at a waiter. The clip is everywhere.`,choices:[
+    {label:'Fire the CEO',sub:'Profit −5%, reputation +3',fn:()=>{c.ebitda*=0.95;rep(3);log(`Fired the CEO of ${c.name}.`);}},
+    {label:'Pay the waiter to delete it',sub:'Illegal · minor evidence, heat +6',cls:'illegal',fn:()=>{addEvidence('witness tampering',1);heat(6);log('The video quietly disappeared.','warn');}},
+    {label:'Ride it out',sub:'Reputation −5',fn:()=>rep(-5)}]})},
+  {id:'union',need:'co',make:c=>({title:`Union Vote at ${c.name}`,body:'Workers have filed for a union election.',choices:[
+    {label:'Accept the union',sub:'Growth −1%, reputation +4',fn:()=>{c.growth-=0.01;rep(4);}},
+    {label:'Fight it legally',sub:`${fm(0.5*sc())} personal · reputation −2`,disabled:()=>S.personal<0.5*sc(),fn:()=>{S.personal-=0.5*sc();rep(-2);}},
+    {label:'Fire the organizers',sub:'Illegal · profit +8%, minor evidence, heat +10',cls:'illegal',fn:()=>{c.ebitda*=1.08;addEvidence('illegal union busting',1);heat(10);}}]})},
+  {id:'senator',make:()=>{const of=S.officials.find(o=>o.role==='Senator');return {title:'A Senator Calls',body:`Senator ${esc(of.name)} can make a rival’s financing “fall through” before your next auction. A ${fm(0.6*sc())} campaign contribution would help.`,choices:[
+    {label:'Contribute',sub:`${fm(0.6*sc())} personal · Illegal · serious evidence, heat +6 · one fewer rival next auction · influence +2`,cls:'illegal',disabled:()=>S.personal<0.6*sc(),fn:()=>{S.personal-=0.6*sc();addEvidence('bribery',2);heat(6);S.rivalHandicap=true;S.influence+=2;}},
+    {label:'Decline politely',fn:()=>{}}]};}},
+  {id:'tip',make:()=>({title:'A Banker Friend Talks Too Much',body:'Over drinks, a friend mentions a merger that hasn’t been announced.',choices:[
+    {label:'Trade on it',sub:`Personal +${fm(5*sc())} · Illegal · serious evidence, heat +12`,cls:'illegal',fn:()=>{S.personal+=5*sc();addEvidence('insider trading',2);heat(12);}},
+    {label:'Report it to compliance',sub:'Reputation +3',fn:()=>rep(3)},
+    {label:'Change the subject',fn:()=>{}}]})},
+  {id:'town',need:'co',make:c=>({title:'The Millbrook Plant',body:`${esc(c.name)} could close its oldest site in the town of Millbrook. It’s the town’s biggest employer.`,choices:[
+    {label:'Close it',sub:'Profit +10%, reputation −6',cls:'gray',fn:()=>{c.ebitda*=1.1;rep(-6);news(`${c.name} closes Millbrook site. Town reeling.`);}},
+    {label:'Keep it open',sub:'Reputation +2',fn:()=>rep(2)}]})},
+  {id:'fed',make:()=>{const up=chance(0.55);return {title:up?'The Central Bank Hikes Rates':'The Central Bank Cuts Rates',body:up?'Bank interest rises 1.5 points and the market cools. The effect fades over the next few years.':'Bank interest falls 1.5 points and the market heats up. The effect fades over the next few years.',choices:[
+    {label:'Continue',fn:()=>{if(up){S.rateShift+=0.015;S.mktShift-=0.06;}else{S.rateShift-=0.015;S.mktShift+=0.06;}applyEconomy();}}]};}},
+  {id:'family',need:'co',make:c=>{const g=value(c)*1.1;return {title:'The Founder’s Grandson',body:`The founding family wants to buy back <b>${esc(c.name)}</b> for ${fm(g)} (10% over value). Debt is ${fm(c.debt)}.`,choices:[
+    {label:'Sell it back',sub:`${fm(g-c.debt)} paid out · reputation +4`,disabled:()=>g<c.debt,fn:()=>{if(!co(c.id))return;rep(4);realize(c,g-c.debt,'family');}},
+    {label:'Decline',fn:()=>{}}]};}},
+  {id:'zoning',need:'co',make:c=>({title:'Permit Stuck at the Zoning Board',body:`An expansion at <b>${esc(c.name)}</b> is stuck waiting on permits.`,choices:[
+    {label:'Wait it out',sub:'Profit −6%',fn:()=>{c.ebitda*=0.94;}},
+    {label:'Lean on a lawmaker',sub:'Spend 2 influence · no loss',disabled:()=>S.influence<2,fn:()=>{S.influence-=2;}},
+    {label:'Approach the zoning commissioner',sub:'Illegal · opens a bribe',cls:'illegal',fn:()=>{next(bribeModal({role:'Zoning Commissioner',purpose:`Pay the zoning commissioner to approve ${esc(c.name)}’s permits? Success: profit +12%. Failure: profit −6%.`,
+      onSuccess:()=>{c.ebitda*=1.12;},onFail:()=>{c.ebitda*=0.94;},onBackoff:()=>{c.ebitda*=0.94;}}));}}]})},
+  {id:'whistle',need:'evidence',make:()=>{const e=S.evidence.slice().sort((a,b)=>b.sev-a.sev)[0];return {title:'A Whistleblower Emerges',body:`A former employee has documents about <b>${esc(e.crime)}</b>.`,choices:[
+    {label:'Pay hush money',sub:`${fm(1*sc())} personal · Illegal · serious evidence`,cls:'illegal',disabled:()=>S.personal<sc(),fn:()=>{S.personal-=sc();addEvidence('hush money',2);}},
+    {label:'Let it go',sub:'The evidence surfaces now',fn:()=>{S.evidence=S.evidence.filter(x=>x!==e);openCase(e.crime,e.sev>=3?2:1);}},
+    {label:'Fire and sue them',sub:'Reputation −4 · 50% it surfaces anyway',fn:()=>{rep(-4);if(chance(0.5)){S.evidence=S.evidence.filter(x=>x!==e);openCase(e.crime,e.sev>=3?2:1);}}}]};}},
+  {id:'audit',make:()=>({title:'Tax Audit',body:'The tax authority wants to look at your fee structure.',choices:[
+    {label:'Pay what they find',sub:`${fm(0.6*sc())} personal`,disabled:()=>S.personal<0.6*sc(),fn:()=>{S.personal-=0.6*sc();}},
+    {label:'“Lose” the records',sub:'Illegal · serious evidence, heat +8',cls:'illegal',fn:()=>{addEvidence('obstruction of justice',2);heat(8);}},
+    {label:'Fight it',sub:'50% you owe nothing, otherwise double',fn:()=>{if(!chance(0.5))S.personal=Math.max(0,S.personal-1.2*sc());}}]})},
+  {id:'pitch',make:()=>({title:'Consultants With a Slide Deck',body:'A consulting firm wants to sell you a “proprietary value creation framework.”',choices:[
+    {label:'Buy it',sub:`${fm(0.5*sc())} personal · pick a strong card`,disabled:()=>S.personal<0.5*sc(),fn:()=>{S.personal-=0.5*sc();const k=draftCards(3,true);next({title:'The Framework',body:'Choose one.',choices:k.map(x=>({label:CARDS[x].n,sub:CARDS[x].d,cls:CARDS[x].tier,fn:()=>addCard(x)}))});}},
+    {label:'Show them out',fn:()=>{}}]})},
+  {id:'esg',make:()=>({title:'An Investor Asks About ESG',body:'A university endowment wants your sustainability numbers before the next fund.',choices:[
+    {label:'Give an honest answer',sub:'Reputation +1',fn:()=>rep(1)},
+    {label:'Greenwash it',sub:'Gray · reputation +5, 35% chance of minor evidence',cls:'gray',fn:()=>{rep(5);if(chance(0.35))addEvidence('misleading ESG claims',1);}}]})},
+  {id:'hype',make:()=>{const s=pick(Object.keys(SECTORS).filter(x=>x!==S.hot));return {title:`Everyone Wants ${s}`,body:`A viral think piece declared ${s} “the next big thing.” ${s} is now the hot sector (value +25%).`,choices:[{label:'Continue',fn:()=>{if(S.cold===s)S.cold=S.hot;S.hot=s;}}]};}},
+  {id:'antitrust',need:'co',min:2,make:()=>{const c=largest();
+    if(S.laws.antitrust)return info('Antitrust Review',`Thanks to the Antitrust Relaxation Act, a review of ${esc(c.name)} took one afternoon. Cleared.`);
+    const lose=()=>{c.multBonus-=2;c.growth-=0.02;news(`Regulators block ${c.name} expansion.`);log(`${c.name} lost its antitrust review. Multiple −2, growth −2%.`,'bad');};
+    return {title:'Antitrust Review',body:`Regulators are reviewing <b>${esc(c.name)}</b> (${fm(value(c))}). If they rule against you, its multiple drops by 2 and growth by 2%.`,choices:[
+      {label:'Fight in court',sub:'50% cleared',fn:()=>{if(chance(0.5))log(`${c.name} cleared antitrust review.`,'good');else lose();}},
+      {label:'Call in favors',sub:'Spend 4 influence · cleared',disabled:()=>S.influence<4,fn:()=>{S.influence-=4;log('The review was quietly closed.','good');}},
+      {label:'Pay off the regulator',sub:'Illegal · opens a bribe',cls:'illegal',fn:()=>{next(bribeModal({role:'Regulator',purpose:`Pay the regulator to clear ${esc(c.name)}?`,onSuccess:()=>log(`${c.name} cleared antitrust review.`,'good'),onFail:lose,onBackoff:lose}));}},
+      {label:'Accept the ruling',fn:lose}]};}}
+];
+function runEvent(){
+  const ok=EVENTS.filter(e=>(!e.min||S.fund.n>=e.min)&&(!e.need||(e.need==='co'&&S.companies.length)||(e.need==='evidence'&&S.evidence.length)));
+  const e=pick(ok);queue(e.make(e.need==='co'?anyCo():null));
+}
+
+/* ---------- map ---------- */
+const NODE_LABEL={deal:'Deal',auction:'Auction',distressed:'Distressed',conference:'Conference',retreat:'Golf Retreat',event:'Event',exit:'Exit Window'};
+const NODE_DESC={deal:'Two companies for sale at fair prices.',auction:'One great company. Bid against rivals. Winning earns a connection.',distressed:'Two broken companies, cheap. Many hidden problems.',conference:'Spend personal money on cards, connections and influence.',retreat:'Recover reputation, cool heat, gain influence, or charm investors.',event:'Something happens. You choose how to respond.',exit:'Strategic buyers are hunting: every sale this year pays 25% more.'};
+const BOSS=[
+  {n:'The Investor Pitch',d:'Investors grill you over 4 rounds before the fundraise. They go after your weak spots: low returns, heavy debt, scandals, lost companies and unsold companies. A strong return and a clean record make it easy.'},
+  {n:'Black Monday',d:'A market crash in 5 scenes. Bank interest jumps, prices collapse and banks call in loans. Companies with heavy debt will be in danger. Keep debt low and cash on hand.'},
+  {n:'The Hostile Rival',d:'Kestrel Partners tries to take over your most valuable company. You fight them round by round with fund cash, bluffs and dirty tricks. Keep cash on hand.'}
+];
+function genMap(){
+  const rows=[];
+  for(let y=0;y<6;y++){const m=S.mktPlan[y];const row=[];
+    for(let l=0;l<3;l++){let t=y===0?pick(['deal','deal','distressed']):wpick({deal:30,auction:m>1.08?22:12,distressed:m<0.92?26:14,conference:12,retreat:8,event:18,exit:m>1.08?12:6});if(y<2&&t==='exit')t='deal';row.push(t);}
+    if(y===3&&!row.includes('conference'))row[ri(0,2)]='conference';rows.push(row);}
+  return rows;
+}
+const reachable=l=>S.year===1||S.pos===null||Math.abs(l-S.pos)<=1;
+
+/* ---------- bosses ---------- */
+const QUESTIONS={returns:'“Walk us through your returns. Honestly.”',debt:'“Why is there so much debt in this portfolio?”',scandal:'“We keep reading about your firm in the papers. Explain.”',losses:'“What happened to the companies you lost?”',exits:'“Why haven’t you sold more? We want our money back.”',edge:'“What makes you different from the other hundred firms pitching us?”'};
+const QLABEL={returns:'returns',debt:'debt',scandal:'scandals',losses:'lost companies',exits:'unsold companies',edge:'your edge'};
+const PITCH={
+  numbers:{n:'Show the Numbers',ans:['returns','exits'],d:'Strong only if your return is strong.'},
+  story:{n:'Tell the Origin Story',ans:['edge'],d:'A reliable crowd-pleaser.'},
+  deflect:{n:'Change the Subject',ans:['scandal','losses','debt'],d:'Weak, but it dodges an awkward question.'},
+  namedrop:{n:'Name-Drop',ans:['edge'],d:'Stronger the more connections you have.'},
+  golf:{n:'Golf Anecdote',ans:['edge','scandal'],d:'Stronger with a good reputation.'},
+  plan:{n:'Show the Debt Plan',ans:['debt'],d:'Strong if your debt load is 3× or less.'},
+  promise:{n:'Promise the Moon',ans:['returns','exits'],d:'Big hit now. Your next fundraise target goes up by 0.1.'},
+  apology:{n:'Own the Mistake',ans:['losses','scandal'],d:'Honesty lands. Reputation +2.'},
+  fake:{n:'Fake the Numbers',ans:['returns','exits'],ill:true,d:'Devastating. Severe evidence, heat +12. 25% someone notices on the spot.'},
+  adviser:{n:'Bribe Their Adviser',ans:['returns','debt','scandal','losses','exits','edge'],ill:true,d:'Answers anything. Costs personal money. Severe evidence. 30% the adviser is honest.'}
+};
+function pitchDmg(k){const m=fundMoic();return Math.round({numbers:clamp(15+90*(m-1),0,65),story:22,deflect:12,namedrop:8+4*S.conns.length,golf:10+S.rep/5,plan:avgLoad()<=3?30:10,promise:35,apology:25+S.rep/10,fake:60,adviser:45}[k]);}
+function pickQuestion(){const o={returns:fundMoic()<1.3?4:2,edge:2};if(avgLoad()>4)o.debt=3;if(S.heat>=30||S.cases.length||S.rep<40)o.scandal=3;if(S.fund.lost>0)o.losses=3;if(S.fund.dist<0.3*S.fund.size)o.exits=3;return wpick(o);}
+function pitchHand(){const o={};Object.keys(PITCH).forEach(k=>o[k]=PITCH[k].ill?1:2);const h=[];while(h.length<3){const k=wpick(o);delete o[k];h.push(k);}return h;}
+function startPitch(){
+  const doubt=Math.round(clamp(100+(1.35-fundMoic())*150+S.heat*0.4-(S.rep-50)*0.6+S.cases.length*15,40,200));
+  S.boss={kind:'pitch',doubt,start:doubt,round:1,max:4,q:pickQuestion(),hand:pitchHand(),msgs:[`The investors look skeptical. Doubt starts at ${doubt}.`],done:false};
+  S.phase='boss';
+}
+function playPitch(k){
+  const b=S.boss;if(b.done)return;const P=PITCH[k];let dmg=pitchDmg(k);const ans=P.ans.includes(b.q);
+  if(k==='adviser'&&!needPersonal(sc()))return;
+  if(k==='promise')S.promiseNext=(S.promiseNext||0)+0.1;
+  if(k==='apology')rep(2);
+  if(k==='fake'){addEvidence('valuation fraud',3);heat(12);if(chance(0.25)){dmg=-50;b.msgs.unshift('An investor checked your numbers. They don’t add up. Doubt +50.');openCase('valuation fraud',2);}}
+  if(k==='adviser'){addEvidence('bribing an investment adviser',3);if(chance(0.3)){dmg=-40;b.msgs.unshift('The adviser was honest and told the room. Doubt +40.');openCase('bribing an investment adviser',2);}}
+  b.doubt-=dmg;if(dmg>0)b.msgs.unshift(`${P.n}: doubt −${dmg}.`);
+  if(!ans){b.doubt+=12;b.msgs.unshift(`You didn’t answer the question about ${QLABEL[b.q]}. Doubt +12.`);}
+  b.round++;
+  if(b.doubt<=0){b.done=true;b.doubt=0;S.pitchScore=0.2;b.msgs.unshift('The room is sold. They’re fighting over allocation.');log('You won the Investor Pitch.','good');queue(connRewardModal('The investors loved you. One of them introduces you to someone useful.'));}
+  else if(b.round>b.max){b.done=true;S.pitchScore=-Math.round(b.doubt/4)/100;b.msgs.unshift(`The meeting ends with doubt at ${b.doubt}. Fundraise score ${S.pitchScore.toFixed(2)}.`);log('The Investor Pitch went badly.','bad');}
+  else{b.q=pickQuestion();b.hand=pitchHand();}
+}
+function blackMonday(){
+  S.rateShift+=0.03;S.mktShift-=0.2;applyEconomy();S.companies.forEach(c=>c.ebitda*=0.9);
+  const bm={tip:false};
+  const bm5=()=>{const lost=S.fund.lost;const fin=()=>{if(S.fund.lost===0&&S.companies.length){log('You survived Black Monday without losing a company.','good');next(connRewardModal('You came through the crash intact. People want to know you now.'));}};
+    if(bm.tip)return {title:'Black Monday · 5 of 5: The Reporter',body:'A reporter is writing “Who Profited From the Crash?” and has your trading records.',choices:[
+      {label:'Deny everything',sub:'50% the story runs and regulators open a case',fn:()=>{if(chance(0.5))openCase('insider trading during the crash',2);fin();}},
+      {label:'Bribe the editor',sub:`${fm(1.5*sc())} personal · Illegal · serious evidence · story dies`,cls:'illegal',disabled:()=>S.personal<1.5*sc(),fn:()=>{S.personal-=1.5*sc();addEvidence('bribing a journalist',2);fin();}},
+      {label:'Blame a junior trader',sub:'Reputation −6',fn:()=>{rep(-6);fin();}}]};
+    return {title:'Black Monday · 5 of 5: The Reporter',body:`A reporter is writing about who lost the most in the crash. ${lost?`You lost ${lost} ${lost===1?'company':'companies'} this fund.`:'You didn’t lose a single company.'}`,choices:[
+      {label:'Give an honest interview',sub:`Reputation +${lost?1:6}`,fn:()=>{rep(lost?1:6);fin();}},
+      {label:'Leak a rival’s losses instead',sub:'Gray · reputation −1, minor evidence',cls:'gray',fn:()=>{rep(-1);addEvidence('leaking confidential information',1);fin();}},
+      {label:'Kill the story',sub:`${fm(sc())} personal · Illegal · serious evidence · reputation +3`,cls:'illegal',disabled:()=>S.personal<sc(),fn:()=>{S.personal-=sc();addEvidence('bribing a journalist',2);rep(3);fin();}}]};};
+  const bm4=()=>{if(!S.companies.length)return bm5();const offer=S.companies.reduce((s,c)=>s+Math.max(0,value(c)*0.6-c.debt),0);
+    return {title:'Black Monday · 4 of 5: The Vulture Calls',body:`Kestrel Partners offers to buy your whole portfolio at 60% of value: ${fm(offer)} paid out today. Prices are low now and may recover by year end.`,choices:[
+      {label:'Sell everything',sub:`${fm(offer)} paid out`,fn:()=>{S.companies.slice().forEach(c=>{const g=value(c)*0.6;if(g>c.debt)realize(c,g-c.debt,'pe');else handKeys(c);});next(bm5());}},
+      {label:'Sell them only your riskiest company',sub:'At 85% of value',fn:()=>{const w=S.companies.slice().sort((a,b)=>riskOf(b)-riskOf(a))[0];const g=value(w)*0.85;if(g>w.debt)realize(w,g-w.debt,'pe');next(bm5());}},
+      {label:'Hang up',fn:()=>next(bm5())}]};};
+  const bm3=()=>{const c=largest();if(!c)return bm4();return {title:'Black Monday · 3 of 5: The Panicked CEO',body:`The CEO of <b>${esc(c.name)}</b> wants to quit and take the top team to a competitor.`,choices:[
+    {label:'Pay a retention bonus',sub:`${fm(sc())} personal`,disabled:()=>S.personal<sc(),fn:()=>{S.personal-=sc();next(bm4());}},
+    {label:'Let them go',sub:`${c.name} profit −15%`,fn:()=>{c.ebitda*=0.85;next(bm4());}},
+    {label:'Threaten to sue',sub:'Reputation −3 · 50% they stay, otherwise profit −15%',fn:()=>{rep(-3);if(!chance(0.5))c.ebitda*=0.85;next(bm4());}}]};};
+  const bm2=()=>{const short=S.companies.map(c=>({c,need:Math.max(0,c.debt-5*c.ebitda)})).filter(x=>x.need>0);const tot=short.reduce((s,x)=>s+x.need,0);
+    if(!short.length)return {title:'Black Monday · 2 of 5: The Banks Call',body:'Your banks call every client. Your debt is low enough that they hang up satisfied. Keeping debt low just paid off.',choices:[{label:'Continue',sub:'Reputation +3',fn:()=>{rep(3);next(bm3());}}]};
+    return {title:'Black Monday · 2 of 5: The Banks Call',body:`Banks want every company’s debt under 5× its yearly profit. ${short.map(x=>`<b>${esc(x.c.name)}</b> is ${fm(x.need)} over`).join(', ')}. Total ${fm(tot)}.`,choices:[
+      {label:`Pay it down from the fund (${fm(tot)})`,disabled:()=>S.fund.cash<tot,fn:()=>{short.forEach(x=>{S.fund.cash-=x.need;x.c.debt-=x.need;x.c.cost+=x.need;});next(bm3());}},
+      {label:'Call in favors with the banks',sub:'Spend 3 influence · they back off',disabled:()=>S.influence<3,fn:()=>{S.influence-=3;next(bm3());}},
+      {label:'Fire-sell them',sub:'Sell every over-limit company at 70% of value',fn:()=>{short.forEach(x=>{if(!co(x.c.id))return;const g=value(x.c)*0.7;if(g>x.c.debt)realize(x.c,g-x.c.debt,'pe');else handKeys(x.c);});next(bm3());}},
+      {label:'Let the banks take the worst',sub:'You lose every company above 6× debt load. The rest survive.',fn:()=>{short.forEach(x=>{if(co(x.c.id)&&x.c.debt/x.c.ebitda>6)handKeys(x.c);});next(bm3());}}]};};
+  queue({title:'Black Monday · 1 of 5: The Crash',body:'Markets fell 20% overnight. Bank interest is up 3 points, buyers are paying far less, and every company lost 10% of its profit.',choices:[
+    {label:'Order every CEO to cut costs now',sub:'Profit +6% at every company · reputation −4',fn:()=>{S.companies.forEach(c=>c.ebitda*=1.06);rep(-4);next(bm2());}},
+    {label:'Stay calm and send a reassuring memo',sub:'Reputation +3',fn:()=>{rep(3);next(bm2());}},
+    {label:'Bet against the market on a tip from a Treasury friend',sub:`Illegal · personal +${fm(5*sc())} · severe evidence, heat +15`,cls:'illegal',fn:()=>{bm.tip=true;S.personal+=5*sc();addEvidence('insider trading during the crash',3);heat(15);next(bm2());}}]});
+}
+const DUEL_ACTS={
+  buy:{n:'Buy back shares',d:'Spend fund cash to cut Kestrel’s stake by 12 points.'},
+  pill:{n:'Poison pill',d:'Once. Kestrel’s buying is halved for the rest of the fight. Reputation −2.'},
+  bluff:{n:'Bluff: “We have a white knight”',d:'35% Kestrel believes you and skips this round (stake −5). Otherwise they buy 50% extra.'},
+  read:{n:'Read their tells',d:'Study Kestrel this round. You learn exactly how much money they have left. They still buy.'},
+  leak:{n:'Leak their secrets',d:'Illegal. Kestrel loses 40% of its war chest. Serious evidence, heat +10.'},
+  adviser:{n:'Bribe the shareholder adviser',d:'Illegal. Kestrel’s stake −20. Costs personal money. Serious evidence. 25% they report you.'},
+  knight:{n:'Fake a white knight bid',d:'Illegal. Kestrel backs off for 2 rounds. Severe evidence, heat +15.'},
+  fold:{n:'Fold: sell to Kestrel',d:'Sell the company to Kestrel at 85% of value and end the fight.'}
+};
+function startDuel(){
+  const c=largest();if(!c){queue(info('The Hostile Rival','Kestrel Partners wanted to take over one of your companies. You don’t own any. They go after someone else.'));pending=startOps;S.phase='node';return;}
+  const v=value(c);
+  S.boss={kind:'duel',coId:c.id,stake:20,chest:v*rf(0.4,0.75),chest0:0,round:1,max:5,pill:false,skip:0,known:false,msgs:[`Kestrel Partners has quietly bought 20% of ${c.name} and wants control. If they reach 50%, they force a sale at 70% of value.`],done:false};
+  S.boss.chest0=S.boss.chest;S.boss.tell=duelTell();S.phase='boss';
+}
+function duelTell(){const b=S.boss;if(b.known)return `Kestrel has ${fm(b.chest)} left.`;const r=b.chest/b.chest0;const real=r>0.6?0:r>0.3?1:2;const shown=chance(0.8)?real:ri(0,2);
+  return ['Kestrel’s partners look relaxed.','Kestrel is making calls to its lenders.','Kestrel’s partners look nervous.'][shown]+(hasConn('insider')?` Your Auction Insider says about ${fm(b.chest*rf(0.85,1.15))}.`:'');}
+function duelBuyCost(){const c=co(S.boss.coId);return value(c)*0.12;}
+function playDuel(a){
+  const b=S.boss;if(b.done)return;const c=co(b.coId);if(!c){b.done=true;return;}const v=value(c);let rivalMult=b.pill?0.5:1,rivalSkip=b.skip>0;
+  switch(a){
+    case 'buy':{const x=duelBuyCost();if(!needCash(x))return;c.cost+=x;b.stake-=12;b.msgs.unshift(`You bought back shares for ${fm(x)}. Kestrel’s stake −12.`);break;}
+    case 'pill':if(b.pill)return;b.pill=true;rivalMult=0.5;rep(-2);b.msgs.unshift('You adopted a poison pill. Kestrel’s buying is halved.');break;
+    case 'bluff':if(chance(0.35)){rivalSkip=true;b.stake-=5;b.msgs.unshift('Kestrel believed you. They pause and sell a little.');}else{rivalMult*=1.5;b.msgs.unshift('Kestrel called your bluff. They buy harder.');}break;
+    case 'read':b.known=true;b.msgs.unshift(`You read them perfectly: Kestrel has ${fm(b.chest)} left.`);break;
+    case 'leak':b.chest*=0.6;addEvidence('leaking confidential information',2);heat(10);b.msgs.unshift('Kestrel’s lenders read some unflattering memos. Their war chest −40%.');break;
+    case 'adviser':if(!needPersonal(sc()))return;if(chance(0.25)){heat(10);b.msgs.unshift('The adviser reported you.');openCase('bribing a shareholder adviser',2);}else{b.stake-=20;addEvidence('bribing a shareholder adviser',2);b.msgs.unshift('The adviser told shareholders to back you. Kestrel’s stake −20.');}break;
+    case 'knight':b.skip=3;rivalSkip=true;addEvidence('fraudulent bidding',3);heat(15);b.msgs.unshift('A “rival bidder” appeared out of nowhere. Kestrel backs off.');break;
+    case 'fold':{const g=v*0.85;b.done=true;if(g>c.debt)realize(c,g-c.debt,'pe');else handKeys(c);b.msgs.unshift('You sold to Kestrel. The fight is over.');log(`You folded to Kestrel over ${c.name}.`,'bad');return;}
+  }
+  b.stake=Math.max(0,b.stake);
+  if(b.skip>0)b.skip--;
+  if(!rivalSkip){
+    let buy=ri(10,15)*rivalMult;if(b.round>=3&&b.stake<35)buy*=1.6;
+    const cost=buy/100*v;
+    if(b.chest>=cost){b.chest-=cost;b.stake+=buy;b.msgs.unshift(`Kestrel buys ${Math.round(buy)} more points.`);}
+    else if(b.chest>0.02*v){const part=b.chest/v*100;b.stake+=part;b.chest=0;b.msgs.unshift(`Kestrel spends its last money on ${Math.round(part)} points.`);}
+    else b.msgs.unshift('Kestrel is out of money.');
+  }
+  b.stake=Math.round(b.stake);b.round++;
+  if(b.stake>=50){b.done=true;const g=v*0.7;if(g>c.debt)realize(c,g-c.debt,'pe');else handKeys(c);rep(-3);news(`Kestrel Partners seizes ${c.name} in hostile takeover.`);b.msgs.unshift(`Kestrel reached ${b.stake}% and forced a sale at 70% of value.`);log(`Kestrel took ${c.name}.`,'bad');}
+  else if(b.round>b.max||b.chest<0.02*v){b.done=true;c.multBonus+=1;news(`${S.firm} fends off Kestrel’s raid on ${c.name}.`);b.msgs.unshift(`You held Kestrel at ${b.stake}%. ${c.name} is now seen as a fortress: multiple +1.`);log(`You beat Kestrel and kept ${c.name}.`,'good');queue(connRewardModal('Beating Kestrel made your name. Choose a connection.'));}
+  if(!b.done)b.tell=duelTell();
+}
+
+/* ---------- flow ---------- */
+function startRun(firm,founder){
+  S={v:VERSION,rs:(Date.now()^Math.floor(Math.random()*1e9))|0,uid:1,firm,founder,phase:'map',rep:50,heat:0,influence:0,personal:0,
+    conns:[FOUNDERS[founder].conn],cards:FOUNDERS[founder].deck.slice(),deck:[],discard:[],hand:[],bw:0,companies:[],evidence:[],cases:[],officials:[],
+    bills:{loophole:0,interest:0,antitrust:0},laws:{},log:[],news:[],funds:[],usedNames:[],fallGuys:0,lpBonus:0,exitBoost:0,
+    rivalHandicap:false,rivalBoost:false,lawyered:false,mckUsed:false,golfUsed:false,prUsed:false,rate:0.07,mkt:1,hot:null,cold:null,year:1,fund:{n:1,size:50},
+    frozen:0,rigged:false,auctionBan:false,pitchScore:0,pensionBribe:0,promiseNext:0,promise:0};
+  startFund(1,50,[]);
+}
+function rotateHype(){const k=shuffle(Object.keys(SECTORS));S.hot=k[0];S.cold=k[1];}
+function startFund(n,size,cont){
+  S.fund={n,size,cash:size,dist:0,fees:0,exits:[],lost:0};S.year=1;S.pos=null;S.path=[];genEconomy();S.map=genMap();S.officials=genOfficials();
+  rotateHype();S.deck=shuffle(S.cards);S.discard=[];S.hand=[];
+  S.lpBonus=0;S.golfUsed=false;S.prUsed=false;S.exitBoost=0;S.node=null;S.boss=null;S.auctionBan=false;S.pitchScore=0;S.pensionBribe=0;
+  S.promise=S.promiseNext||0;S.promiseNext=0;
+  cont.forEach(c=>{const eq=equity(c);S.fund.cash=Math.max(0,S.fund.cash-eq);c.cost=eq;S.companies.push(c);});
+  S.phase='map';log(`${FUNDNAMES[n-1]} closed at ${fm(size)}. Seven years to put it to work. Year 7 boss: ${BOSS[n-1].n}.`,'good');
+}
+function enterNode(t){
+  S.node={type:t};
+  switch(t){
+    case 'deal':S.node.offers=[0,1].map(()=>makeOffer(genCompany(wpick({Steady:50,Thriving:25,Failing:25})),'deal',rf(1.0,1.1)));
+      if(S.rep>=65){const o=makeOffer(genCompany(wpick({Steady:50,Thriving:35,Failing:15})),'private',rf(0.85,0.95));S.node.offers.push(o);}break;
+    case 'distressed':S.node.offers=[0,1].map(()=>makeOffer(genCompany('Failing',chance(0.5)?1:0),'distressed',rf(0.65,0.8)*(hasConn('vulture')?0.9:1)));break;
+    case 'auction':{
+      const c=genCompany(chance(0.6)?'Thriving':'Steady');if(!c.traits.some(t=>!TRAITS[t.k].bad))c.traits.push({k:'loyal',rev:false});
+      const o=makeOffer(c,'auction',0.9);const v=value(c);
+      o.rivals=RIVALS.map(r=>({name:r.name,limit:v*(rf(0.95,1.3)+r.bias+(r.loves===c.sector?0.15:0)+(S.rivalBoost?0.1:0)),in:true}));
+      S.rivalBoost=false;o.allowed=S.rep>=25&&!S.auctionBan;
+      if(S.rivalHandicap){o.rivals.sort((a,b)=>b.limit-a.limit);const gone=o.rivals.shift();o.note=`${gone.name}’s financing fell through. They’re out.`;S.rivalHandicap=false;}
+      S.node.offers=[o];break;}
+    case 'conference':S.node.shop={cards:draftCards(hasConn('club')?4:3),conns:draftConns(2),sold:[]};break;
+    case 'exit':S.exitBoost=0.25;S.companies.forEach(c=>c.strategic=true);break;
+    case 'event':runEvent();pending=startOps;break;
+    case 'boss':
+      if(S.fund.n===1){startPitch();return;}
+      if(S.fund.n===2){blackMonday();pending=startOps;break;}
+      startDuel();return;
+  }
+  S.phase='node';
+}
+function startOps(){S.phase='ops';S.node=null;S.buy=null;S.auc=null;S.boss=null;S.bw=FOUNDERS[S.founder].bw+(hasConn('second')?1:0);draw(5+(hasConn('rolodex')?1:0));}
+function endYear(){
+  S.discard.push(...S.hand);S.hand=[];sel=null;
+  const f=S.fund;
+  if(S.frozen)S.frozen--;
+  S.cases.filter(cs=>cs.wait).forEach(cs=>{cs.wait=false;queue(caseModal(cs));});
+  for(const c of S.companies.slice()){
+    c.yearsOwned++;
+    const load=c.ebitda>0?c.debt/c.ebitda:99;
+    c.ebitda*=1+c.growth+(load<=2?0.01:0)+rf(-0.03,0.03)*(c.growth<0?1.6:1);
+    if(c.growth>0.1)c.growth-=0.008;c.growth+=rf(-0.008,0.008);
+    const fcf=c.ebitda*0.65-c.debt*compRate(c);
+    if(fcf>=0){const pay=Math.min(c.debt,fcf);c.debt-=pay;if(fcf>pay)f.dist+=fcf-pay;}else c.debt-=fcf;
+    c.assetValue*=1.02;
+    if(has(c,'maintenance')&&c.yearsOwned===1){c.debt+=c.ebitda;dropTrait(c,'maintenance');log(`Deferred Maintenance at ${c.name}: ${fm(c.ebitda)} of emergency repairs added to its debt.`,'bad');}
+    if(has(c,'lawsuit')&&c.yearsOwned===2){const a=1.5*c.ebitda;c.debt+=a;dropTrait(c,'lawsuit');log(`Pending Lawsuit at ${c.name}: ${fm(a)} settlement added to its debt.`,'bad');}
+    if(has(c,'keyperson')&&chance(0.12)){c.ebitda*=0.85;dropTrait(c,'keyperson');log(`Key-Person Risk at ${c.name}: the founder quit. Profit −15%.`,'bad');}
+    if(has(c,'concentration')&&chance(0.18)){c.ebitda*=0.75;dropTrait(c,'concentration');log(`Customer Concentration at ${c.name}: the biggest customer left. Profit −25%.`,'bad');}
+    if(has(c,'patent')&&chance(0.25)){const a=0.6*c.ebitda;f.dist+=a;dropTrait(c,'patent');log(`Unused Patent at ${c.name} licensed for ${fm(a)}.`,'good');}
+    c.strategic=chance(0.3);c.fakeBid=false;
+  }
+  if(chance(0.25)){const owned=[...new Set(S.companies.map(c=>c.sector))];const s=owned.length&&chance(0.7)?pick(owned):pick(Object.keys(SECTORS));
+    const hit=S.companies.filter(c=>c.sector===s);hit.forEach(c=>c.ebitda*=0.85);
+    if(hit.length)queue(info(`Downturn in ${s}`,`Demand for ${s.toLowerCase()} dropped. ${hit.map(c=>esc(c.name)).join(', ')} lost 15% of profit. Companies with heavy debt feel this most.`));
+    else log(`A downturn hit ${s}. You own nothing there.`);}
+  const fee=0.02*f.size,fromCash=Math.min(f.cash,fee);f.cash-=fromCash;f.dist-=fee-fromCash;f.fees+=fee;S.personal+=fee;
+  if(hasConn('dog'))rep(1);
+  if(hasConn('cayman'))heat(3);
+  const raid=S.heat>=90;
+  for(const e of S.evidence.slice()){
+    e.age++;
+    if(e.age>=evLife(e)){S.evidence=S.evidence.filter(x=>x!==e);log(`The ${e.crime} trail went cold.`,'good');}
+    else if(chance(raid?0.5:evChance(e))){S.evidence=S.evidence.filter(x=>x!==e);openCase(e.crime,e.sev>=3?2:1);}
+  }
+  if(raid){S.frozen=2;S.heat=60;rep(-10);news(`Federal agents raid ${S.firm} offices.`);queue(info('Raid!','Federal agents walked out of your office with boxes of files. Your fund cash is frozen for a year, every piece of evidence was examined, and your reputation took a beating (−10).'));}
+  else heat(-8);
+  S.officials.filter(o=>o.demand).forEach(of=>{const bc=bribeCost();queue({title:`${of.name} Wants Another Envelope`,body:`The ${of.role.toLowerCase()} you paid off wants ${fm(2*bc)} more. Or they start talking.`,choices:[
+    {label:'Pay up',sub:`${fm(2*bc)} personal · Illegal · serious evidence`,cls:'illegal',disabled:()=>S.personal<2*bc,fn:()=>{S.personal-=2*bc;addEvidence('bribery',2);of.demand=chance(0.5);}},
+    {label:'Refuse',sub:'They go to the regulators',fn:()=>{of.demand=false;openCase('bribery',2);}}]});});
+  if(S.year%2===0)rotateHype();
+  if(S.fund.n>=2)for(const k in S.bills)if(!S.laws[k]&&S.bills[k]>0)S.bills[k]=Math.max(0,S.bills[k]-ri(0,2));
+  S.companies.filter(c=>c.ebitda<=0||c.debt/c.ebitda>7).forEach(c=>queue(breachModal(c)));
+  S.exitBoost=0;
+  pending=()=>{
+    if(S.phase==='over')return;
+    if(S.rep<=0){gameOver('Blacklisted','Your reputation hit zero. No investor will return your calls.');return;}
+    if(S.year>=7){S.phase='close';S.closeSel={};S.companies.forEach(c=>S.closeSel[c.id]='sell');}
+    else{S.year++;S.mckUsed=false;S.mktShift*=0.5;S.rateShift*=0.5;applyEconomy();S.phase='map';}
+  };
+}
+function finalizeClose(){
+  const f=S.fund,last=f.n===3,cont=[];
+  for(const c of S.companies){
+    if(!last&&S.closeSel[c.id]==='cont'){f.dist+=equity(c);cont.push(c);rep(-3);heat(4);news(`${S.firm} moves ${c.name} into a continuation fund, at its own valuation.`);}
+    else{const p=equity(c)*(last?0.9:0.85);f.dist+=p;f.exits.push({name:c.name,moic:c.cost>0?p/c.cost:0,net:p});news(`${c.name} sold in ${S.firm}’s end-of-fund fire sale.`);}
+  }
+  S.companies=[];
+  const total=f.cash+f.dist,moic=total/f.size;
+  let carry=0;if(moic>=1.3)carry=0.2*(total-f.size)*(S.laws.loophole?1.5:1)*(hasConn('cayman')?1.25:1);
+  S.personal+=carry;
+  S.funds.push({n:f.n,size:f.size,moic,carry,fees:f.fees});
+  if(last){gameOver('Retired',`You closed ${FUNDNAMES[2]} at a ${moic.toFixed(2)}× return and retired to a ranch in Montana.`);return;}
+  const target=([1.35,1.45][f.n-1]+S.promise)*(hasConn('whisper')?0.85:1);
+  const parts=[['Fund return',moic],['Reputation',(S.rep-50)/200],['Heat',-S.heat/400],['Open cases',-0.08*S.cases.length],['Investor pitch',S.pitchScore],['Golf with investors',S.lpBonus],['Safe hands (no companies lost)',f.lost===0&&f.exits.length+cont.length>0?0.05:0],['Bribed pension manager',S.pensionBribe]];
+  const score=parts.reduce((s,p)=>s+p[1],0);
+  let outcome,size;
+  if(score>=target){outcome='success';size=f.size*6*Math.pow(Math.min(2,score/target),1.5);}
+  else if(score>=0.8*target){outcome='weak';size=f.size*3;}
+  else{outcome='fail';size=0;}
+  const repealed=[];
+  if(f.n>=2)for(const k in S.laws)if(chance(0.25)){delete S.laws[k];S.bills[k]=0;repealed.push(LAWS[k].n);}
+  S.raise={moic,carry,parts:parts.filter(p=>p[1]!==0||p[0]==='Fund return'),score,target,outcome,size,cont,repealed};S.phase='raise';
+}
+function gameOver(kind,text){
+  S.phase='over';S.outcome={kind,text};Q=[];pending=null;
+  try{const h=JSON.parse(localStorage.getItem(HALL_KEY)||'[]');h.push({firm:S.firm,founder:FOUNDERS[S.founder].n,fortune:S.personal,kind,funds:S.funds.length,date:new Date().toISOString().slice(0,10),v:VERSION});h.sort((a,b)=>b.fortune-a.fortune);localStorage.setItem(HALL_KEY,JSON.stringify(h.slice(0,20)));}catch(e){}
+  try{localStorage.removeItem(SAVE_KEY);}catch(e){}
+}
+
+/* ---------- explanations ---------- */
+function explain(k){
+  const f=S.fund;const fc=[1,2].map(forecast).filter(Boolean);
+  const target=f.n<3?(([1.35,1.45][f.n-1]+S.promise)*(hasConn('whisper')?0.85:1)).toFixed(2)+'×':'none (final fund)';
+  const tiers=(list,cur,fmtMin)=>`<div class="tablewrap"><table>${list.map(t=>`<tr class="${t===cur?'on':''}"><td>${t.n}</td><td>${fmtMin(t)}</td><td>${t.d}</td></tr>`).join('')}</table></div>`;
+  const X={
+    cash:['Fund cash','Money your investors gave you that you haven’t spent yet. Use it to buy companies and rescue them. Unspent cash goes back to investors at the end with no profit, so put it to work.'],
+    paid:['Paid out','Money already sent back to investors from sales, dividends, recaps and payouts. It counts toward your return and can’t be lost anymore.'],
+    ret:['Return',`Everything the fund is worth (fund cash + paid out + your stakes in companies) divided by what investors put in. 1.00× means you broke even. <b>Your bonus starts at 1.30×.</b> Fundraise target for the next fund: <b>${target}</b>.`],
+    money:['Your money','Your own fortune: 2% of the fund every year in fees, plus your bonus at the end of each fund. It pays for bribes, conferences, legal defense and fines. <b>Your final score.</b>'],
+    rep:['Reputation',`How the industry sees you (0–100). At 0 the run ends. It also counts at every fundraise.${tiers(REP_TIERS,repTier(),t=>t.min+'+')}`],
+    heat:['Heat',`How closely the press and the authorities are watching (0–100). It cools by 8 a year. Higher heat makes evidence surface more often.${tiers(HEAT_TIERS,heatTier(),t=>t.min+'+')}`],
+    inf:['Influence','Political favors you can call in. Spend it to kill a news story (2), make a permit problem vanish (2), drop an investigation (4), calm the banks in a crash (3), or win an antitrust review (4). From Fund II you can push laws through Congress with it. Earn it from lobbyists, campaign donations, golf with senators and bribes.'],
+    rate:['Bank interest',`The base interest rate banks charge this year: <b>${(S.rate*100).toFixed(1)}%</b>. Each company pays this plus a premium for heavy debt:<div class="tablewrap"><table><tr><th>Debt load</th><th>Extra</th></tr><tr><td>Up to 2×</td><td>−1%</td></tr><tr><td>2–3×</td><td>0</td></tr><tr><td>3–4×</td><td>+1%</td></tr><tr><td>4–5×</td><td>+2.5%</td></tr><tr><td>5–6×</td><td>+4%</td></tr><tr><td>Over 6×</td><td>+6%</td></tr></table></div>Forecast: ${fc.map((x,i)=>`Year ${S.year+i+1}: ${(x.r*100).toFixed(1)}%`).join(' · ')||'end of fund'}. Cheap money usually means a hot market.`],
+    mkt:['Market',`How much buyers are paying compared with normal: <b>${moodOf(S.mkt).n}</b>, ${pct(S.mkt-1)} on every price. It moves in a cycle. Buy when it’s cold, sell when it’s hot. Hot markets bring more auctions and exit windows; cold markets bring more distressed sellers.<br>Forecast: ${fc.map((x,i)=>`Year ${S.year+i+1}: ${moodOf(x.m).n} (${pct(x.m-1)})`).join(' · ')||'end of fund'}. Events can change it.`],
+    risk:['Chance the bank takes it','Each company owes interest every year. If its debt grows past 7× its yearly profit, the bank can take it unless you pay to rescue it. This number replays next year 240 times (normal swings, possible downturns, traits you’ve found) and shows how often the limit gets broken. Safe is under 5%, Risky under 25%, Danger above. Companies with debt load of 2× or less also grow 1% faster.']
+  };
+  const x=X[k];return info(x[0],x[1]);
+}
+
+/* ---------- actions ---------- */
+const A={
+  pickFounder:x=>{titleFounder=x;},
+  start:()=>{const el=document.getElementById('firmname');const n=(el&&el.value.trim())||'Granite Ridge Capital';startRun(n.slice(0,40),titleFounder);},
+  continue:()=>{try{S=JSON.parse(localStorage.getItem(SAVE_KEY));}catch(e){S=null;}},
+  quit:()=>{S=null;Q=[];pending=null;},
+  explain:x=>{queue(explain(x));},
+  go:x=>{if(S.year===7){if(S.pos==null)S.pos=1;enterNode('boss');return;}const l=+x;if(!reachable(l))return;S.pos=l;S.path.push(l);enterNode(S.map[S.year-1][l]);},
+  dd:x=>{const o=S.node.offers[+x],cost=ddCost(o);if(o.dd>=o.ddMax||S.fund.cash<cost||S.frozen)return;S.fund.cash-=cost;o.dd++;o.c.assetKnown=true;
+    const hidden=shuffle(o.c.traits.filter(t=>!t.rev)).slice(0,hasConn('barbarians')?2:1);
+    if(!hidden.length)log(`Diligence on ${o.c.name} found nothing new.`);
+    hidden.forEach(t=>{t.rev=true;log(`Diligence on ${o.c.name}: ${TRAITS[t.k].n}.`,TRAITS[t.k].bad?'bad':'good');
+      if(t.k==='cooked'){o.c.ebitda*=0.75;recalcOffer(o);log(`${o.c.name} restated its profit. New price ${fm(o.price)}.`);}
+      if(t.k==='founder'){o.disc=true;recalcOffer(o);log(`The founder of ${o.c.name} cut the price to ${fm(o.price)}.`);}});},
+  buy:x=>{const o=S.node.offers[+x];if(!canFinance(o.c,o.price))return;S.buy={oi:+x,price:o.price,auction:false};S.phase='buy';},
+  bid:()=>{const a=S.auc,o=S.node.offers[a.oi];const bid=a.leader?a.price+a.step:a.price;if(!canFinance(o.c,bid))return;
+    a.price=bid;a.leader='You';a.msgs.unshift(`You bid ${fm(bid)}.`);
+    const nxt=bid+a.step;o.rivals.forEach(r=>{if(r.in&&r.limit<nxt){r.in=false;a.msgs.unshift(`${r.name} drops out.`);}});
+    const live=o.rivals.filter(r=>r.in).sort((p,q)=>q.limit-p.limit);
+    if(!live.length){a.msgs.unshift('Nobody else bids. You win.');S.buy={oi:a.oi,price:bid,auction:true};S.auc=null;S.phase='buy';return;}
+    a.price=nxt;a.leader=live[0].name;a.msgs.unshift(`${live[0].name} bids ${fm(nxt)}.`);},
+  startAuction:x=>{const o=S.node.offers[+x];
+    if(S.rigged){S.rigged=false;log('The other bids got “lost in the mail.” You win at the opening price.','warn');S.buy={oi:+x,price:o.price,auction:true};S.phase='buy';return;}
+    S.auc={oi:+x,price:o.price,leader:null,step:value(o.c)*0.05,msgs:[]};if(o.note)S.auc.msgs.push(o.note);},
+  pull:x=>{const o=S.node.offers[+x];if(S.influence<2)return;S.influence-=2;o.allowed=true;log('A phone call got you into the auction.');},
+  walk:()=>{const a=S.auc,o=S.node.offers[a.oi];o.done=true;log(`${a.leader&&a.leader!=='You'?a.leader:'A rival'} won ${o.c.name} at ${fm(a.price)}.`);S.auc=null;},
+  confirmBuy:()=>{const b=S.buy,o=S.node.offers[b.oi],c=o.c;const el=document.getElementById('lev');const debt=clamp(+(el?el.value:0),Math.max(0,b.price-S.fund.cash),maxDebt(c,b.price));
+    S.fund.cash-=b.price-debt;c.debt=debt;c.cost=b.price-debt;c.owned=true;c.yearsOwned=0;o.done=true;
+    const sur=[];
+    c.traits.forEach(t=>{if(t.rev)return;if(t.k==='cooked'){c.ebitda*=0.75;t.rev=true;sur.push('<b>Cooked Books</b>: real profit is 25% lower than reported. Your debt load just jumped.');}
+      if(t.k==='founder'){t.rev=true;sur.push('<b>Motivated Seller</b>: the founder would have taken 12% less. Oh well.');}});
+    if(has(c,'loyal'))c.growth+=0.02;
+    if(hasConn('guru')&&c.growth<0)c.growth+=0.04;
+    S.companies.push(c);S.buy=null;S.phase='node';
+    log(`Bought ${c.name} for ${fm(b.price)} (${fm(debt)} borrowed, ${fm(c.cost)} from the fund).`,'good');news(`${S.firm} acquires ${c.name} for ${fm(b.price)}.`);
+    if(sur.length)queue(info('Post-Closing Surprise',sur.join('<br>')));
+    queue(cardRewardModal('Your associates learned something on that deal.'));
+    if(b.auction)queue(connRewardModal('Winning that auction got you noticed. Choose one.'));},
+  cancelBuy:()=>{if(S.buy.auction){rep(-5);S.node.offers[S.buy.oi].done=true;log('You walked away from a signed deal. Reputation −5.','bad');}S.buy=null;S.phase='node';},
+  leave:()=>{startOps();},
+  retreat:x=>{if(x==='rep')rep(10);else if(x==='heat')heat(-25);else if(x==='inf')S.influence+=3;else S.lpBonus+=0.08;startOps();},
+  shopCard:x=>{const sh=S.node.shop,k=sh.cards[+x],p=cardPrice(k);if(sh.sold.includes('c'+x)||!needPersonal(p))return;addCard(k);sh.sold.push('c'+x);log(`Bought ${CARDS[k].n}.`);},
+  shopConn:x=>{const sh=S.node.shop,k=sh.conns[+x],p=connPrice();if(sh.sold.includes('n'+x)||!needPersonal(p))return;S.conns.push(k);sh.sold.push('n'+x);log(`New connection: ${CONNS[k].n}.`,'good');},
+  shopRemove:()=>{const p=0.6*sc()*(hasConn('club')?0.8:1);if(S.personal<p||S.cards.length<=4)return;const uniq=[...new Set(S.cards)];
+    queue({title:'Fire a Junior Associate',body:`Remove one card from your playbook for ${fm(p)}.`,choices:uniq.map(k=>({label:CARDS[k].n,sub:CARDS[k].d,fn:()=>{S.personal-=p;removeCard(k);log(`Removed ${CARDS[k].n} from your playbook.`);}})).concat([{label:'Never mind'}])});},
+  donate:()=>{const p=1.5*sc()*(hasConn('club')?0.8:1);if(!needPersonal(p))return;S.influence+=3;rep(-1);S.node.shop.sold.push('don');log('Campaign donation made. Influence +3.');},
+  selcard:x=>{const hi=+x;sel=sel===hi?null:hi;},
+  playNow:()=>{if(sel===null)return;const k=S.hand[sel];if(CARDS[k].t!=='none')return;playCard(sel,null);},
+  apply:x=>{if(sel===null)return;const c=co(+x);if(c)playCard(sel,c);},
+  sell:x=>{const [id,kind]=x.split(':');const c=co(+id);if(!c)return;const gross=kind==='pe'?salePE(c):kind==='strat'?saleStrat(c):saleBreak(c);
+    if(gross<c.debt){log(`Selling ${c.name} that way would not cover its debt.`,'bad');return;}c.assetKnown=true;realize(c,gross-c.debt,kind);},
+  keys:x=>{const c=co(+x);if(c)handKeys(c);},
+  merge:x=>{const a=co(+x);const others=S.companies.filter(c=>c!==a&&c.sector===a.sector);
+    queue({title:`Merge Into ${a.name}`,body:'Fold another company in this sector into it. Bigger companies get a higher multiple, and 2+ merged companies get a platform premium.',
+      choices:others.map(b=>({label:b.name,sub:`Yearly profit ${fm(b.ebitda)} · debt ${fm(b.debt)}`,fn:()=>mergeCos(a,b)})).concat([{label:'Cancel'}])});},
+  bill:x=>{if(S.influence<1||S.laws[x])return;S.influence--;S.bills[x]++;if(S.bills[x]>=8){S.laws[x]=true;log(`${LAWS[x].n} signed into law.`,'good');news(`Congress passes the ${LAWS[x].n}. ${S.firm} lobbyists celebrate.`);}},
+  endYear:()=>{endYear();},
+  pitch:x=>{playPitch(x);},
+  duel:x=>{playDuel(x);},
+  bossDone:()=>{startOps();},
+  closeSel:x=>{const [id,v]=x.split(':');S.closeSel[id]=v;},
+  finalize:()=>{finalizeClose();},
+  nextFund:()=>{const r=S.raise;if(r.outcome==='fail'){gameOver('Fundraise Failed',`Investors passed on ${FUNDNAMES[S.fund.n]}. ${S.firm} winds down.`);return;}
+    r.repealed.forEach(n=>log(`Election: the ${n} was repealed.`,'bad'));startFund(S.fund.n+1,r.size,r.cont);S.raise=null;},
+  modal:x=>{const m=Q.shift();const ch=m&&m.choices[+x];if(ch&&ch.fn)ch.fn();},
+  newRun:()=>{S=null;}
+};
+function playCard(hi,c){
+  const k=S.hand[hi],C=CARDS[k],cost=cardCost(k);if(cost>S.bw){log('Not enough actions left this year.','bad');return;}
+  if(C.p(c)===false)return;
+  if(k==='cut'&&hasConn('mckinsey'))S.mckUsed=true;
+  S.bw-=cost;S.hand.splice(hi,1);S.discard.push(k);sel=null;
+}
+function mergeCos(a,b){
+  if(!co(a.id)||!co(b.id))return;
+  const tot=a.ebitda+b.ebitda;a.growth=(a.growth*a.ebitda+b.growth*b.ebitda)/tot;a.ebitda=tot;a.debt+=b.debt;a.cost+=b.cost;
+  a.platform+=1+b.platform;a.traits=a.traits.concat(b.traits);a.assetValue+=b.assetValue;a.assetKnown=a.assetKnown&&b.assetKnown;
+  a.multBonus=Math.max(a.multBonus,b.multBonus);a.inflated=Math.max(a.inflated,b.inflated);a.rateAdj=Math.min(a.rateAdj,b.rateAdj);
+  if(!/Holdings$/.test(a.name))a.name=`${a.name.split(' ')[0]} ${a.sector} Holdings`;
+  S.companies=S.companies.filter(x=>x!==b);log(`Merged ${b.name} into ${a.name}.`,'good');news(`${S.firm} combines ${b.name} into ${a.name}.`);
+}
+const cardPrice=k=>({common:0.8,uncommon:1.2,rare:1.8}[CARDS[k].r])*sc()*(hasConn('club')?0.8:1);
+const connPrice=()=>3*sc()*(hasConn('club')?0.8:1);
+
+/* ---------- views ---------- */
+const stat=(k,v,cls,x,ex)=>ex?`<button class="stat" data-a="explain" data-x="${ex}"><span class="k">${k} ⓘ</span><span class="v ${cls||''}">${v}</span>${x?`<span class="x">${x}</span>`:''}</button>`:`<div class="stat"><span class="k">${k}</span><span class="v ${cls||''}">${v}</span>${x?`<span class="x">${x}</span>`:''}</div>`;
+const btn=(label,a,x,opt)=>{opt=opt||{};return `<button class="btn ${opt.cls||''}" data-a="${a}" data-x="${esc(x??'')}" ${opt.dis?'disabled':''}>${label}${opt.sub?`<span class="sub">${opt.sub}</span>`:''}</button>`;};
+function statusHTML(){
+  const f=S.fund,m=fundMoic(),mood=moodOf(S.mkt),nf=forecast(1),rt=repTier(),ht=heatTier();
+  const trend=nf?(nf.r>S.rate+0.002?'rising':nf.r<S.rate-0.002?'falling':'steady'):'';
+  return `<div class="panel status"><div class="row" style="justify-content:space-between"><h2>${esc(S.firm)}</h2><span class="muted small">${FOUNDERS[S.founder].n} · ${FUNDNAMES[f.n-1]} · Year ${S.year} of 7 · ${calYear()}</span></div>
+  <div class="stats">
+    ${stat('Fund cash',fm(f.cash),S.frozen?'bad':'',S.frozen?'Frozen':'','cash')}${stat(T('Paid out','distributions'),fm(f.dist),'','','paid')}
+    ${stat(T('Return','MOIC'),m.toFixed(2)+'×',m>=1.3?'good':m<1?'bad':'',`${fm(f.size)} → ${fm(m*f.size)}`,'ret')}
+    ${stat('Your money',fm(S.personal),'','','money')}
+    ${stat('Reputation',S.rep,S.rep<25?'bad':S.rep>=65?'good':'',rt.n,'rep')}
+    ${stat('Heat',S.heat,S.heat>=60?'bad':S.heat>=30?'warn':'',ht.n,'heat')}
+    ${stat('Influence',S.influence,'','spend on favors','inf')}
+    ${stat('Bank interest',(S.rate*100).toFixed(1)+'%','',trend,'rate')}
+    ${stat('Market',mood.n,mood.cls,`prices ${pct(S.mkt-1)}`,'mkt')}
+  </div><div class="small muted">Hot sector: <b class="good">${S.hot}</b> (+25%) · Cold: <b class="bad">${S.cold}</b> (−20%)${S.exitBoost?' · <b class="good">Exit window open: sales +25%</b>':''} · Tap any ⓘ to see what it does.</div></div>`;
+}
+function traitsHTML(c){
+  const r=c.traits.filter(t=>t.rev);
+  if(!r.length)return '<p class="small muted">No traits uncovered.</p>';
+  return `<ul class="traits">${r.map(t=>`<li><b class="${TRAITS[t.k].bad?'bad':'good'}">${TRAITS[t.k].n}</b>: <span class="muted">${TRAITS[t.k].d}</span></li>`).join('')}</ul>`;
+}
+function coStats(c){
+  const lev=c.ebitda>0?c.debt/c.ebitda:0;const rk=c.owned&&c.debt>0?riskOf(c):0;const rl=riskLabel(rk);
+  return `<div class="stats">${stat(T('Yearly profit','EBITDA'),fm(c.ebitda))}${stat('Growth',pct(c.growth),c.growth<0?'bad':c.growth>=0.08?'good':'')}${stat('Multiple',mult(c).toFixed(1)+'×','','of yearly profit')}
+    ${stat('Value',fm(value(c)))}${c.owned?stat('Debt',fm(c.debt),'',`interest ${(compRate(c)*100).toFixed(1)}%`):''}${c.owned?stat(T('Debt load','leverage'),lev.toFixed(1)+'×',lev>6?'bad':lev>4?'warn':lev<=2?'good':'','bank limit 7×'):''}
+    ${c.owned?stat(T('Your stake','equity'),fm(equity(c))):''}${stat('Breakup value',c.assetKnown?fm(c.assetValue):'?')}${c.owned?stat('Stake return',c.cost>0?(equity(c)/c.cost).toFixed(2)+'×':'–'):''}</div>
+    ${c.owned&&c.debt>0?`<div class="row small"><span class="pill ${rl.cls}">${rl.n}</span><span class="muted">${Math.round(rk*100)}% chance the bank takes it next year</span><button class="btn small" data-a="explain" data-x="risk" style="padding:2px 8px">ⓘ</button></div>`:''}
+    ${c.owned&&lev<=2&&c.debt>=0?'<p class="small good">Low debt: grows 1% faster and pays less interest.</p>':''}`;
+}
+function coHead(c){return `<div class="co-head"><h3>${esc(c.name)}</h3><span class="row" style="gap:4px"><span class="pill">${c.sector}</span><span class="pill ${health(c)}">${health(c)}</span>${c.platform?`<span class="pill">Platform ${c.platform}</span>`:''}${c.inflated?'<span class="pill Danger">Inflated</span>':''}${c.fakeBid?'<span class="pill Danger">Fake buyer</span>':''}</span></div>`;}
+function mapHTML(){
+  let h='<div class="map">';
+  const moodCell=y=>{if(y>S.year+2)return 'forecast ?';const m=y<=S.year?S.mktPlan[y-1]+(y===S.year?S.mktShift:0):forecast(y-S.year).m;const md=moodOf(m);return `<span class="${md.cls}">${md.n}</span>`;};
+  h+=`<span class="yr">Year 7<br>${moodCell(7)}</span><button class="btn node boss ${S.year===7?'primary':''}" data-a="go" data-x="boss" ${S.year===7?'':'disabled'}>Boss: ${BOSS[S.fund.n-1].n}</button>`;
+  for(let y=6;y>=1;y--){
+    h+=`<span class="yr">Year ${y}<br>${moodCell(y)}</span>`;
+    for(let l=0;l<3;l++){const t=S.map[y-1][l];const past=y<S.year,cur=y===S.year,chosen=past&&S.path[y-1]===l;
+      const can=cur&&reachable(l);
+      h+=`<button class="btn node ${chosen?'here':''}" data-a="go" data-x="${l}" ${can?'':'disabled'} title="${esc(NODE_DESC[t])}">${NODE_LABEL[t]}</button>`;}
+  }
+  h+='</div>';
+  const cur=S.year<7?[...new Set(S.map[S.year-1].filter((t,l)=>reachable(l)))].map(t=>`<li><b>${NODE_LABEL[t]}</b>: ${NODE_DESC[t]}</li>`).join(''):'';
+  return `<div class="panel"><h2>${FUNDNAMES[S.fund.n-1]} map · choose where to spend Year ${S.year}</h2>
+    <div class="preview"><b>Year 7 boss: ${BOSS[S.fund.n-1].n}</b><span>${BOSS[S.fund.n-1].d}</span></div>
+    <p class="small muted">The column on the left is the market forecast: buy when it’s cold, sell when it’s hot.</p>
+    ${h}${cur?`<ul class="small muted" style="margin:0;padding-left:18px">${cur}</ul>`:''}</div>`+portfolioHTML(false);
+}
+function offerHTML(o,i){
+  const c=o.c,auc=o.kind==='auction';
+  const full=c.traits.every(t=>t.rev);
+  let actions='';
+  if(o.done)actions='<p class="muted small">Closed.</p>';
+  else{
+    const dc=ddCost(o);
+    actions=btn(full?'Diligence complete':`Diligence (${fm(dc)})`,'dd',i,{dis:full||o.dd>=o.ddMax||S.fund.cash<dc||!!S.frozen,sub:auc?`Time pressure: ${o.ddMax-o.dd} round left`:'Reveals a hidden trait'});
+    const fin=canFinance(c,o.price);
+    if(auc&&!o.allowed)actions+=btn('Auction house won’t let you in','x','',{dis:true,sub:S.auctionBan?'You were banned this fund':'Your reputation is Toxic'})+btn('Pull strings','pull',i,{dis:S.influence<2,sub:'Spend 2 influence to get in'});
+    else if(auc)actions+=btn(S.rigged?`Win it at ${fm(o.price)} (rigged)`:`Start bidding at ${fm(o.price)}`,'startAuction',i,{cls:S.rigged?'primary illegal':'primary',dis:!!S.auc||!fin,sub:fin?`vs ${o.rivals.filter(r=>r.in).length} rivals`:S.frozen?'Fund cash frozen':'You can’t afford this'});
+    else actions+=btn(`Buy for ${fm(o.price)}`,'buy',i,{cls:'primary',dis:!fin,sub:fin?`Banks lend up to ${fm(maxDebt(c,o.price))}`:S.frozen?'Fund cash frozen':`Need ${fm(o.price-maxDebt(c,o.price))} from the fund`});
+  }
+  const kindTag=o.kind==='private'?'<p class="small good">Private deal: offered because of your reputation.</p>':'';
+  return `<div class="co">${coHead(c)}${kindTag}${coStats(c)}${traitsHTML(c)}<p class="small muted">${full?'Fully diligenced.':`${c.traits.filter(t=>t.rev).length} trait(s) found. More may be hidden.`}</p><div class="row">${actions}</div></div>`;
+}
+function auctionHTML(){
+  const a=S.auc,o=S.node.offers[a.oi];const bid=a.leader&&a.leader!=='You'?a.price+a.step:a.price;
+  const top=o.rivals.filter(r=>r.in).sort((p,q)=>q.limit-p.limit)[0];
+  const hint=hasConn('insider')&&top?`<p class="small good">Auction Insider: ${top.name} walks away around ${fm(top.limit*(0.95+((a.oi+top.limit)%0.1)))}.</p>`:'';
+  return `<div class="panel"><h2>Auction: ${esc(o.c.name)}</h2><p>Current price <b>${fm(a.price)}</b> · Leader: <b>${a.leader||'none yet'}</b></p>
+   <p class="small muted">Still in: ${o.rivals.filter(r=>r.in).map(r=>r.name).join(', ')||'nobody'}</p>${hint}
+   <div class="row">${a.leader==='You'?'':btn(`Bid ${fm(bid)}`,'bid','',{cls:'primary',dis:!canFinance(o.c,bid),sub:canFinance(o.c,bid)?'':'You can’t afford this'})}${btn('Walk away','walk')}</div>
+   <div class="log">${a.msgs.map(m=>`<div>${esc(m)}</div>`).join('')}</div></div>`;
+}
+function nodeHTML(){
+  const n=S.node,t=n.type;let body='';
+  if(t==='deal'||t==='distressed'||t==='auction'){
+    body=(S.auc?auctionHTML():'')+`<div class="grid2">${n.offers.map(offerHTML).join('')}</div>`;
+    if(t==='distressed')body=`<p class="small muted">Shrinking businesses at a discount. Breakup value is often higher than the price, if you’re willing to sell for parts.</p>`+body;
+  } else if(t==='conference'){
+    const sh=n.shop,cm=hasConn('club')?0.8:1;
+    body=`<p class="small muted">Paid from your money (${fm(S.personal)}).</p><h3>Playbook cards</h3><div class="hand">${sh.cards.map((k,i)=>cardHTML(k,'shopCard',i,{price:cardPrice(k),sold:sh.sold.includes('c'+i)})).join('')}</div>
+      <h3>Connections</h3><div class="row">${sh.conns.map((k,i)=>btn(`${CONNS[k].n} · ${fm(connPrice())}`,'shopConn',i,{sub:CONNS[k].d,dis:sh.sold.includes('n'+i)||S.personal<connPrice()})).join('')||'<span class="muted">Nobody new here.</span>'}</div>
+      <h3>Other</h3><div class="row">${btn(`Fire a junior associate · ${fm(0.6*sc()*cm)}`,'shopRemove','',{sub:'Remove a card from your playbook',dis:S.personal<0.6*sc()*cm||S.cards.length<=4})}
+      ${btn(`Campaign donation · ${fm(1.5*sc()*cm)}`,'donate','',{cls:'gray',sub:'Influence +3, reputation −1',dis:sh.sold.includes('don')||S.personal<1.5*sc()*cm})}</div>`;
+  } else if(t==='retreat'){
+    body=`<p>Eighteen holes and a long lunch. Pick one.</p><div class="row">${btn('Charity foursome','retreat','rep',{sub:'Reputation +10'})}${btn('Lay low','retreat','heat',{sub:'Heat −25'})}${btn('Golf with a senator','retreat','inf',{sub:'Influence +3'})}${btn('Golf with investors','retreat','lp',{sub:'Fundraise score +0.08'})}</div>`;
+  } else if(t==='exit'){
+    body='<p>Strategic buyers are flush with cash. Every sale this year pays 25% more, and every company you own has a strategic buyer.</p>';
+  } else body='<p class="muted">Resolving…</p>';
+  const leave=t==='retreat'?'':`<div class="row">${btn('Go to operations →','leave','',{cls:'primary',dis:!!S.auc})}</div>`;
+  return `<div class="panel"><h2>Year ${S.year}: ${t==='boss'?BOSS[S.fund.n-1].n:NODE_LABEL[t]}</h2>${body}${t==='event'||t==='boss'?'':leave}</div>`+portfolioHTML(false);
+}
+function bossHTML(){
+  const b=S.boss;let h='';
+  if(b.kind==='pitch'){
+    const cards=b.done?'':b.hand.map(k=>{const P=PITCH[k],d=pitchDmg(k),ans=P.ans.includes(b.q);const dis=k==='adviser'&&S.personal<sc();
+      return `<button class="btn cardb ${P.ill?'illegal':''}" data-a="pitch" data-x="${k}" ${dis?'disabled':''}><span class="top"><b>${P.n}</b><span class="cost">−${d}</span></span>${P.ill?'<span class="tag illegal">illegal</span>':''}<span class="desc">${P.d}</span><span class="desc ${ans?'good':'bad'}">${ans?'Answers the question':'Doesn’t answer: doubt +12'}</span>${k==='adviser'?`<span class="desc">Costs ${fm(sc())}</span>`:''}</button>`;}).join('');
+    h=`<h2>Boss: The Investor Pitch${b.done?'':` · Round ${b.round} of ${b.max}`}</h2>
+      <div><div class="row" style="justify-content:space-between"><b>Investor doubt</b><span class="stat"><span class="v">${b.doubt} / ${b.start}</span></span></div><div class="bar doubt"><i style="width:${clamp(b.doubt/b.start*100,0,100)}%"></i></div></div>
+      <p class="small muted">Get doubt to 0 within ${b.max} rounds to win a connection and a +0.20 fundraise boost. Whatever doubt is left counts against your fundraise.</p>
+      ${b.done?'':`<p class="boss-q">${QUESTIONS[b.q]}</p><p class="small muted">They’re asking about ${QLABEL[b.q]}. Pick your answer.</p><div class="hand">${cards}</div>`}`;
+  } else {
+    const c=co(b.coId);
+    if(!c&&!b.done){b.done=true;b.msgs.unshift('The company is gone. The fight is over.');}
+    const acts=b.done?'':Object.keys(DUEL_ACTS).map(k=>{const D=DUEL_ACTS[k];const ill=['leak','adviser','knight'].includes(k);
+      let dis=false,sub=D.d;if(k==='buy'){const x=duelBuyCost();dis=S.fund.cash<x||!!S.frozen;sub+=` Costs ${fm(x)}.`;}if(k==='pill')dis=b.pill;if(k==='adviser'){dis=S.personal<sc();sub+=` Costs ${fm(sc())}.`;}if(k==='read')dis=b.known;
+      return btn(D.n,'duel',k,{cls:ill?'illegal':k==='fold'?'gray':'',dis,sub});}).join('');
+    h=`<h2>Boss: The Hostile Rival${b.done?'':` · Round ${Math.min(b.round,b.max)} of ${b.max}`}</h2>
+      <p>Kestrel Partners is buying up <b>${c?esc(c.name):'your company'}</b>${c?` (${fm(value(c))})`:''}.</p>
+      <div><div class="row" style="justify-content:space-between"><b>Kestrel’s stake</b><span class="stat"><span class="v">${b.stake}% / 50%</span></span></div><div class="bar rival"><i style="width:${clamp(b.stake,0,100)}%"></i><span class="mark"></span></div></div>
+      <p class="small muted">Keep Kestrel under 50% for ${b.max} rounds, or until they run out of money. Win: the company’s multiple +1 and a connection. Lose: they force a sale at 70% of value.</p>
+      ${b.done?'':`<p class="boss-q">${esc(b.tell||'')}</p><div class="row">${acts}</div>`}`;
+  }
+  return `<div class="panel">${h}${b.done?`<div class="row">${btn('Go to operations →','bossDone','',{cls:'primary'})}</div>`:''}<div class="log">${b.msgs.map(m=>`<div>${esc(m)}</div>`).join('')}</div></div>`+portfolioHTML(false);
+}
+function buyHTML(){
+  const b=S.buy,o=S.node.offers[b.oi],c=o.c;const mx=maxDebt(c,b.price),mn=Math.max(0,b.price-S.fund.cash);const def=Math.max(mn,Math.min(mx,3*c.ebitda));
+  return `<div class="panel"><h2>Finance ${esc(c.name)}</h2><p>Price <b>${fm(b.price)}</b>. Banks will lend up to <b>${fm(mx)}</b> (${levCap()}× yearly profit, at most 80% of the price). The rest comes from fund cash (${fm(S.fund.cash)}).</p>
+   <p class="small muted">More debt means less of the fund’s money at risk and a bigger return if things go well. It also means higher interest and a bigger chance the bank takes the company in a bad year.</p>
+   <label for="lev" class="small muted">How much to borrow</label><input type="range" id="lev" min="${mn}" max="${mx}" step="${Math.max(0.01,(mx-mn)/100)}" value="${def}">
+   <div id="levtxt" class="preview"></div>
+   <div class="row">${btn('Sign the deal','confirmBuy','',{cls:'primary'})}${btn(b.auction?'Back out (reputation −5)':'Cancel','cancelBuy')}</div></div>`;
+}
+function levText(){
+  const el=document.getElementById('lev'),out=document.getElementById('levtxt');if(!el||!out||!S||!S.buy)return;
+  const c=S.node.offers[S.buy.oi].c,d=+el.value,eq=S.buy.price-d,rate=compRate(c,d);const fcf=c.ebitda*0.65-d*rate;const rk=riskOf(c,d),rl=riskLabel(rk);
+  out.innerHTML=`<div>Borrow <b>${fm(d)}</b> · debt load <b>${(d/c.ebitda).toFixed(1)}×</b> yearly profit</div><div>From the fund: <b>${fm(eq)}</b></div>
+   <div>Interest: <b>${(rate*100).toFixed(1)}%</b> = ${fm(d*rate)} a year · left to pay down debt: <b class="${fcf<0?'bad':''}">${fm(fcf)}</b>${fcf<0?' (debt will grow)':''}</div>
+   <div><span class="pill ${rl.cls}">${rl.n}</span> ${Math.round(rk*100)}% chance the bank takes it next year${d/c.ebitda<=2?' · <span class="good">Low debt: +1% growth a year</span>':''}</div>`;
+}
+function cardHTML(k,a,x,o){
+  o=o||{};const C=CARDS[k];const shop=o.price!==undefined;const cost=shop?fm(o.price):`${cardCost(k)} action${cardCost(k)===1?'':'s'}`;
+  const dis=o.sold||(shop?S.personal<o.price:cardCost(k)>S.bw);
+  return `<button class="btn cardb ${C.tier} ${o.selected?'selected':''}" data-a="${a}" data-x="${x}" ${dis?'disabled':''}>
+    <span class="top"><b>${C.n}</b><span class="cost">${o.sold?'Sold':cost}</span></span><span class="tag ${C.tier}">${C.tier==='legal'?(C.t==='co'?'pick a company':'instant'):C.tier}</span><span class="desc">${C.d}</span></button>`;
+}
+function portfolioHTML(ops){
+  if(!S.companies.length)return `<div class="panel"><h2>Portfolio</h2><p class="muted">You don’t own any companies yet.</p></div>`;
+  const selK=ops&&sel!==null?S.hand[sel]:null,selC=selK&&CARDS[selK].t==='co'?CARDS[selK]:null;
+  return `<div class="panel"><h2>Portfolio · ${S.companies.length} ${S.companies.length===1?'company':'companies'} · your stakes ${fm(nav())}</h2><div class="grid2">${S.companies.map(c=>{
+    let act='';
+    if(ops){
+      if(selC)act=previewHTML(selK,c.id)+`<div class="row">${btn(`Apply ${selC.n}`,'apply',c.id,{cls:'primary'})}</div>`;
+      else{
+        const pe=salePE(c),st=saleStrat(c),br=saleBreak(c);const canSt=c.strategic||S.exitBoost>0;
+        act=btn(`Sell to a PE firm · ${fm(pe-c.debt)}`,'sell',`${c.id}:pe`,{dis:pe<c.debt,sub:'Paid out after repaying debt'});
+        if(canSt)act+=btn(`Strategic sale · ${fm(st-c.debt)}`,'sell',`${c.id}:strat`,{cls:'primary',dis:st<c.debt});
+        act+=btn(`Break up · ${c.assetKnown?fm(br-c.debt):'value unknown'}`,'sell',`${c.id}:break`,{cls:'gray',sub:'Sell for parts. Reputation −2 to −5'});
+        if(S.companies.some(o=>o!==c&&o.sector===c.sector))act+=btn('Merge…','merge',c.id);
+        if(value(c)<c.debt)act+=btn('Let the bank take it','keys',c.id,{sub:'Reputation −5'});
+        act=`<div class="row">${act}</div>`;
+      }
+    }
+    return `<div class="co ${selC?'target':''}">${coHead(c)}${coStats(c)}${traitsHTML(c)}${c.strategic&&ops?'<p class="small good">A strategic buyer is interested this year.</p>':''}${act}</div>`;}).join('')}</div></div>`;
+}
+function opsHTML(){
+  const hand=S.hand.length?S.hand.map((k,i)=>cardHTML(k,'selcard',i,{selected:sel===i})).join(''):'<p class="muted">No cards left this year.</p>';
+  const last=S.year===7;const selK=sel!==null?S.hand[sel]:null;
+  let selPanel='';
+  if(selK){const C=CARDS[selK];
+    selPanel=C.t==='none'?`<div class="co target"><b>${C.n}</b>${previewHTML(selK,null)}<div class="row">${btn(`Play ${C.n}`,'playNow','',{cls:'primary',dis:cardCost(selK)>S.bw})}${btn('Cancel','selcard',sel)}</div></div>`
+      :`<p class="small"><b>${C.n}</b> selected. Each company below shows what it would do. Tap the card again to cancel.</p>`;}
+  let h=`<div class="panel"><div class="row" style="justify-content:space-between"><h2>Year ${S.year} operations</h2><span><b>${S.bw}</b> action${S.bw===1?'':'s'} left</span></div>
+    ${selK?'':'<p class="small muted">Tap a card to see what it would do. Sell or merge companies, then end the year. Unplayed cards go to the discard pile.</p>'}
+    <div class="hand">${hand}</div>${selPanel}
+    <div class="row">${btn(last?'End year and close the fund':'End year','endYear','',{cls:'primary',sub:last?'Unsold companies go to a fire sale or a continuation fund':`You earn ${fm(0.02*S.fund.size)} in fees · heat cools · companies grow`})}</div></div>`;
+  h+=portfolioHTML(true);
+  h+=trailHTML();
+  if(S.fund.n>=2)h+=lobbyHTML();
+  h+=connsHTML();
+  return h;
+}
+function trailHTML(){
+  const ht=heatTier();
+  return `<div class="panel"><h2>Heat & paper trail</h2><div class="row" style="justify-content:space-between"><b class="${S.heat>=60?'bad':S.heat>=30?'warn':''}">${ht.n} · ${S.heat}</b><span class="small muted">30 reporters · 60 under watch · 90 raid</span></div><div class="bar heat"><i style="width:${S.heat}%"></i></div>
+   <p class="small muted">${ht.d} Heat cools by 8 a year.</p>
+   ${S.evidence.length?`<div class="tablewrap"><table><tr><th>Evidence</th><th>Severity</th><th class="n">Surfaces this year</th><th class="n">Goes cold in</th></tr>${S.evidence.map(e=>`<tr><td>${esc(e.crime)}</td><td>${SEV[e.sev].n}</td><td class="n">${Math.round(evChance(e)*100)}%</td><td class="n">${evLife(e)-e.age} yr</td></tr>`).join('')}</table></div>`:'<p class="small">Clean, for now.</p>'}
+   ${S.cases.length?`<p class="small bad">Open cases: ${S.cases.map(c=>esc(c.crime)).join(', ')}</p>`:''}</div>`;
+}
+function lobbyHTML(){
+  return `<div class="panel"><h2>Capitol Hill · ${S.influence} influence</h2><p class="small muted">Spend influence to push a bill. A bill needs 8 points. Opponents knock 0–2 points off unfinished bills every year. Elections at each fund close can repeal laws (25% each).</p>
+   ${Object.keys(LAWS).map(k=>{const p=S.bills[k],stage=S.laws[k]?'Signed':p>=6?'Floor vote':p>=3?'Committee':'Drafted';
+     return `<div class="row" style="justify-content:space-between"><div style="min-width:0;flex:1"><b>${LAWS[k].n}</b> <span class="small muted">· ${stage} ${S.laws[k]?'':`${p}/8`}</span><div class="small muted">${LAWS[k].d}</div><div class="bar"><i style="width:${Math.min(100,p/8*100)}%"></i></div></div>${S.laws[k]?'<span class="good small">In force</span>':btn('Push +1','bill',k,{dis:S.influence<1})}</div>`;}).join('')}</div>`;
+}
+function connsHTML(){
+  const deck=[...new Set(S.cards)].map(k=>`${CARDS[k].n}${S.cards.filter(x=>x===k).length>1?' ×'+S.cards.filter(x=>x===k).length:''}`).join(', ');
+  return `<div class="panel"><h2>Connections & playbook</h2><ul class="small" style="margin:0;padding-left:18px">${S.conns.map(k=>`<li><b>${CONNS[k].n}</b>: ${CONNS[k].d}</li>`).join('')}</ul>
+   <p class="small muted">Playbook (${S.cards.length} cards, ${S.deck.length} in draw pile): ${deck}</p></div>`;
+}
+function closeHTML(){
+  const last=S.fund.n===3;
+  return `<div class="panel"><h2>Closing ${FUNDNAMES[S.fund.n-1]}</h2><p class="small muted">${last?'This is your final fund. Everything left is sold at 90% of your stake’s value.':'Unsold companies go to a fire sale at 85% of your stake’s value. Or move them into a continuation fund: your next fund buys them at your own valuation, and this fund books full value. Investors notice (reputation −3, heat +4 each).'}</p>
+   ${S.companies.length?S.companies.map(c=>`<div class="co">${coHead(c)}<div class="row">${btn(`Fire sale · ${fm(equity(c)*(last?0.9:0.85))}`,'closeSel',`${c.id}:sell`,{cls:S.closeSel[c.id]==='sell'?'primary':''})}${last?'':btn(`Continuation fund · ${fm(equity(c))}`,'closeSel',`${c.id}:cont`,{cls:S.closeSel[c.id]==='cont'?'primary gray':'gray'})}</div></div>`).join(''):'<p>All companies sold. Clean close.</p>'}
+   <div class="row">${btn('Close the fund','finalize','',{cls:'primary'})}</div></div>`;
+}
+function raiseHTML(){
+  const r=S.raise,f=S.fund;
+  const rows=r.parts.map(p=>`<tr><td>${p[0]}</td><td class="n">${p[1]>=0?'+':''}${p[1].toFixed(2)}</td></tr>`).join('');
+  const verdict=r.outcome==='success'?`<p class="good"><b>Oversubscribed.</b> ${FUNDNAMES[f.n]} closes at ${fm(r.size)}.</p>`:r.outcome==='weak'?`<p class="warn"><b>A tough raise.</b> Investors commit only ${fm(r.size)} to ${FUNDNAMES[f.n]}.</p>`:`<p class="bad"><b>Investors pass.</b> There will be no ${FUNDNAMES[f.n]}.</p>`;
+  return `<div class="panel"><h2>${FUNDNAMES[f.n-1]} final results</h2><div class="stats">${stat(T('Return','MOIC'),r.moic.toFixed(2)+'×','',`${fm(f.size)} → ${fm(r.moic*f.size)}`)}${stat(T('Your bonus','carry'),fm(r.carry),r.carry>0?'good':'')}${stat('Fees earned',fm(f.fees))}</div>
+   <p class="small muted">Your bonus is 20% of the profit, paid only if the fund returns at least 1.30×.</p>
+   <h3>Fundraise for ${FUNDNAMES[f.n]}</h3><div class="tablewrap"><table>${rows}<tr><th>Score</th><th class="n">${r.score.toFixed(2)}</th></tr><tr><td>Target</td><td class="n">${r.target.toFixed(2)}</td></tr></table></div>
+   <p class="small muted">Hit the target for a big new fund. Within 80% of it, you get a small one. Below that, the run ends.</p>
+   ${verdict}${r.repealed.length?`<p class="bad small">Election results: ${r.repealed.join(', ')} repealed.</p>`:''}
+   <div class="row">${btn(r.outcome==='fail'?'See how it ended':`Launch ${FUNDNAMES[f.n]}`,'nextFund','',{cls:'primary'})}</div></div>`;
+}
+function overHTML(){
+  const o=S.outcome;
+  return `<div class="panel"><h1>${esc(o.kind)}</h1><p>${esc(o.text)}</p><div class="stats">${stat('Your fortune',fm(S.personal),'good')}${stat('Funds raised',S.funds.length)}${stat('Reputation',S.rep)}</div>
+   ${S.funds.length?`<div class="tablewrap"><table><tr><th>Fund</th><th class="n">Size</th><th class="n">Return</th><th class="n">Your bonus</th></tr>${S.funds.map(f=>`<tr><td>${FUNDNAMES[f.n-1]}</td><td class="n">${fm(f.size)}</td><td class="n">${f.moic.toFixed(2)}×</td><td class="n">${fm(f.carry)}</td></tr>`).join('')}</table></div>`:''}
+   <div class="paper"><h2>The Ledger</h2><ul style="margin:0;padding-left:18px">${S.news.slice(0,10).map(n=>`<li>${esc(n)}</li>`).join('')||'<li>Nobody wrote about you. That might be a good thing.</li>'}</ul></div>
+   <div class="row">${btn('New run','newRun','',{cls:'primary'})}</div></div>`;
+}
+function titleHTML(){
+  let saved=null,hall=[];
+  try{saved=localStorage.getItem(SAVE_KEY);hall=JSON.parse(localStorage.getItem(HALL_KEY)||'[]');}catch(e){}
+  return `<div class="panel"><h1>PE Tycoon</h1><p>Raise a fund. Buy companies. Fix them, flip them, or strip them for parts. Three funds, seven years each. Retire rich, or go to prison trying.</p>
+   ${saved?`<div class="row">${btn('Continue saved run','continue','',{cls:'primary'})}</div>`:''}
+   <label for="firmname" class="small muted">Firm name</label><input type="text" id="firmname" maxlength="40" placeholder="Granite Ridge Capital">
+   <h3>Choose your founder</h3><div class="grid2">${Object.keys(FOUNDERS).map(k=>btn(FOUNDERS[k].n,'pickFounder',k,{cls:titleFounder===k?'primary':'',sub:FOUNDERS[k].d})).join('')}</div>
+   <div class="row">${btn('Start Fund I ($50M)','start','',{cls:'primary'})}</div>
+   <details><summary>How to play</summary><ul class="small" style="padding-left:18px">
+    <li>Each fund lasts 7 years. Every year, pick a stop on the map: deals, auctions, distressed sales, conferences, retreats, events or exit windows. Year 7 is a boss fight, shown from the start.</li>
+    <li>Before buying, pay for diligence to reveal hidden traits. Banks lend part of the price; the rest comes from fund cash. More debt means bigger returns and bigger risk.</li>
+    <li>Each year, spend actions on playbook cards to grow profit, then sell. Tap a card to preview exactly what it does. Merge same-sector companies for a bigger multiple.</li>
+    <li>Your return is what the fund is worth divided by what investors gave you. Hit the fundraise target to raise a bigger next fund. Your bonus pays only above 1.30×.</li>
+    <li>Gray and illegal moves pay big but leave evidence. Evidence can surface for years. Heat makes it surface faster. It’s a gamble that usually ends badly.</li>
+    <li>Your money comes from 2% yearly fees and your bonus. It pays for bribes, conferences and lawyers. Your final score is your fortune.</li>
+    <li>Tap anything marked ⓘ for an explanation.</li></ul></details>
+   ${hall.length?`<h3>Hall of Firms</h3><div class="tablewrap"><table><tr><th>Firm</th><th>Founder</th><th>Ending</th><th class="n">Fortune</th></tr>${hall.slice(0,10).map(h=>`<tr><td>${esc(h.firm)}</td><td>${esc(h.founder)}</td><td>${esc(h.kind)}</td><td class="n">${fm(h.fortune)}</td></tr>`).join('')}</table></div>`:''}
+  </div>`;
+}
+function logHTML(){
+  return `<div class="panel"><div class="row" style="justify-content:space-between"><h2>Deal log</h2>${btn('Quit to title','quit','',{sub:'Progress is saved'})}</div><div class="log">${S.log.slice(0,40).map(l=>`<div class="${l.cls}"><span class="y">${l.y}</span>${esc(l.msg)}</div>`).join('')}</div></div>`;
+}
+function renderModal(){
+  const el=document.getElementById('modal');const m=Q[0];
+  if(!m){el.hidden=true;el.innerHTML='';return;}
+  el.hidden=false;
+  el.innerHTML=`<div class="box" role="dialog" aria-modal="true"><h2>${esc(m.title)}</h2><div>${m.body}</div><div class="choices">${m.choices.map((c,i)=>{const d=typeof c.disabled==='function'?c.disabled():c.disabled;
+    return `<button class="btn ${c.cls||''}" data-a="modal" data-x="${i}" ${d?'disabled':''}>${esc(c.label)}${c.sub?`<span class="sub">${esc(c.sub)}</span>`:''}</button>`;}).join('')}</div></div>`;
+  const b=el.querySelector('button:not(:disabled)');if(b)b.focus({preventScroll:true});
+}
+function render(){
+  for(let guard=0;guard<10&&!Q.length&&pending;guard++){const p=pending;pending=null;p();}
+  if(S&&sel!==null&&(S.phase!=='ops'||sel>=S.hand.length))sel=null;
+  const app=document.getElementById('app');
+  if(!S){app.innerHTML=titleHTML()+`<footer>v${VERSION}</footer>`;renderModal();return;}
+  let main='';
+  switch(S.phase){
+    case 'map':main=mapHTML();break;
+    case 'node':main=nodeHTML();break;
+    case 'buy':main=buyHTML();break;
+    case 'boss':main=bossHTML();break;
+    case 'ops':main=opsHTML();break;
+    case 'close':main=closeHTML();break;
+    case 'raise':main=raiseHTML();break;
+    case 'over':main=overHTML();break;
+  }
+  app.innerHTML=(S.phase==='over'?'':statusHTML())+main+(S.phase==='over'?'':logHTML())+`<footer>PE Tycoon v${VERSION}</footer>`;
+  levText();renderModal();
+  if(!Q.length&&!pending&&S.phase!=='over')save();
+}
+function save(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(S));}catch(e){}}
+
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-a]');if(!b||b.disabled)return;
+  const f=A[b.dataset.a];if(!f)return;
+  f(b.dataset.x);render();
+});
+document.addEventListener('input',e=>{if(e.target.id==='lev')levText();});
+
+function start(d){
+  if(d&&d.save){try{S=JSON.parse(d.save);}catch(e){S=null;}}
+  render();
+}
+window.claude?.hot?.snapshot?.(()=>({save:S&&!Q.length?JSON.stringify(S):null}));
+window.claude?.hot?.ready?window.claude.hot.ready(start):start(window.claude?.hot?.data??{});
+</script>
+</body>
+</html>

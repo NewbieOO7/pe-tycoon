@@ -1,0 +1,945 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>PE Tycoon</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one-column game console. Status strip, then the current phase, portfolio and hand, then the deal log. Plain on purpose: v1 tests mechanics, not looks. */
+:root{
+  --bg:#eef0ec; --panel:#fbfcfa; --ink:#18201b; --muted:#5b675f; --line:#d3d9d3;
+  --accent:#1d6b47; --accent-ink:#ffffff; --good:#1d7a3e; --warn:#8f5b00; --bad:#b42318;
+  --chip:#e3e8e3; --sel:#d3eadc; --scrim:rgb(10 16 12 / .55);
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1411; --panel:#171e1a; --ink:#e3eae5; --muted:#95a299; --line:#2b362f;
+  --accent:#4fbf86; --accent-ink:#0b130e; --good:#62d394; --warn:#e3a94a; --bad:#ff7d6e;
+  --chip:#222c26; --sel:#1d3a2a; --scrim:rgb(0 0 0 / .65); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1411; --panel:#171e1a; --ink:#e3eae5; --muted:#95a299; --line:#2b362f;
+  --accent:#4fbf86; --accent-ink:#0b130e; --good:#62d394; --warn:#e3a94a; --bad:#ff7d6e;
+  --chip:#222c26; --sel:#1d3a2a; --scrim:rgb(0 0 0 / .65); color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45}
+#app{max-width:980px;margin:0 auto;padding-block:12px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:12px}
+h1,h2,h3{margin:0;text-wrap:balance} h1{font-size:24px} h2{font-size:17px} h3{font-size:14px}
+p{margin:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.muted{color:var(--muted)} .small{font-size:12px}
+.good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+.btn{font:inherit;padding:8px 12px;border-radius:6px;border:1px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer;text-align:left}
+.btn:hover:not(:disabled){border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn .sub{display:block;font-size:12px;opacity:.8;font-weight:400}
+.btn.illegal{border-color:var(--bad)} .btn.gray{border-color:var(--warn)}
+.tag{font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:1px 6px;border-radius:4px;border:1px solid currentColor;white-space:nowrap}
+.tag.illegal{color:var(--bad)} .tag.gray{color:var(--warn)} .tag.legal{color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:6px 10px}
+.stat{display:flex;flex-direction:column;min-width:0}
+.stat .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.stat .v{font-variant-numeric:tabular-nums;font-weight:600;font-family:var(--mono);font-size:13px}
+.status{position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.co{border:1px solid var(--line);border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.co.target{border-color:var(--accent);background:var(--sel)}
+.co-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline}
+.pill{font-size:11px;padding:1px 8px;border-radius:99px;background:var(--chip);white-space:nowrap}
+.pill.Failing{color:var(--bad)} .pill.Thriving{color:var(--good)}
+.traits{display:flex;flex-direction:column;gap:2px;font-size:12px;margin:0;padding:0;list-style:none}
+.grid2{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.hand{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.cardb{display:flex;flex-direction:column;gap:4px;min-height:110px}
+.cardb.selected{border-color:var(--accent);background:var(--sel)}
+.cardb .top{display:flex;justify-content:space-between;gap:6px;align-items:center}
+.cardb .cost{font-family:var(--mono);font-weight:700}
+.cardb .desc{font-size:12px;opacity:.85}
+.map{display:grid;grid-template-columns:52px repeat(3,minmax(0,1fr));gap:6px;align-items:stretch}
+.map .yr{font-size:11px;color:var(--muted);align-self:center}
+.map .node{text-align:center;padding:10px 4px}
+.map .node.here{background:var(--sel);border-color:var(--accent)}
+.map .boss{grid-column:2 / span 3;text-align:center;font-weight:600}
+.log{font-size:12px;display:flex;flex-direction:column;gap:3px;max-height:260px;overflow:auto}
+.log .y{font-family:var(--mono);color:var(--muted);margin-right:6px}
+.bar{height:6px;border-radius:3px;background:var(--chip);overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--accent)}
+.bar.heat>i{background:var(--bad)}
+#modal{position:fixed;inset:0;background:var(--scrim);z-index:20;display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+#modal[hidden]{display:none!important}
+#modal .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;max-width:520px;width:100%;max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:12px}
+#modal .choices{display:flex;flex-direction:column;gap:8px}
+input[type=text]{font:inherit;padding:8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);width:100%;max-width:320px}
+input[type=range]{width:100%}
+table{border-collapse:collapse;font-size:12px;width:100%} td,th{padding:4px 6px;border-bottom:1px solid var(--line);text-align:left} td.n{font-family:var(--mono);text-align:right}
+.tablewrap{overflow-x:auto}
+.paper{border:2px solid var(--ink);padding:12px;display:flex;flex-direction:column;gap:6px}
+.paper h2{font-family:Georgia,"Times New Roman",serif;font-size:22px;text-align:center;border-bottom:1px solid var(--ink);padding-bottom:6px}
+.paper li{font-family:Georgia,"Times New Roman",serif}
+details summary{cursor:pointer}
+footer{font-size:11px;color:var(--muted);text-align:center}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal" hidden></div>
+
+<script>
+'use strict';
+const VERSION = '1.0';
+const SAVE_KEY = 'pe_tycoon_save';
+const HALL_KEY = 'pe_tycoon_hall';
+
+/* ---------- state ---------- */
+let S = null;          // game state (serializable)
+let Q = [];            // modal queue (transient)
+let pending = null;    // continuation to run once the modal queue empties
+let sel = null;        // selected hand index
+let titleFounder = 'banker';
+
+/* ---------- rng & helpers ---------- */
+function rand(){S.rs=(S.rs+0x6D2B79F5)|0;let t=S.rs;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;}
+const rf=(a,b)=>a+(b-a)*rand();
+const ri=(a,b)=>Math.floor(rf(a,b+1));
+const pick=a=>a[Math.floor(rand()*a.length)];
+const chance=p=>rand()<p;
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(rand()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function wpick(o){let t=0;for(const k in o)t+=o[k];let r=rand()*t;for(const k in o){r-=o[k];if(r<0)return k;}return Object.keys(o)[0];}
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const esc=s=>String(s).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+function fm(x){const n=Math.abs(x),s=x<0?'−':'';if(n>=1000)return s+'$'+(n/1000).toFixed(2)+'B';if(n>=100)return s+'$'+n.toFixed(0)+'M';return s+'$'+n.toFixed(1)+'M';}
+const pct=x=>(x>=0?'+':'−')+Math.abs(x*100).toFixed(1)+'%';
+const sc=()=>S.fund.size/50;
+const calYear=()=>2026+(S.fund.n-1)*7+S.year;
+const FUNDNAMES=['Fund I','Fund II','Fund III'];
+
+/* ---------- data ---------- */
+const SECTORS={
+  'Dental':{mult:9,suf:['Dental Partners','Smile Group','Family Dentistry']},
+  'Laundromats':{mult:5,suf:['Suds Co.','Wash & Fold','Laundry Centers']},
+  'HVAC':{mult:7,suf:['Heating & Air','Comfort Systems','Climate Services']},
+  'Software':{mult:12,suf:['Logic','Cloudworks','Data Systems']},
+  'Restaurants':{mult:6,suf:['Diner Group','Burger Co.','Pizza Kitchens']},
+  'Trucking':{mult:5,suf:['Freight','Haulers','Logistics']},
+  'Pet Care':{mult:10,suf:['Pet Resorts','Animal Hospitals','Grooming Co.']},
+  'Manufacturing':{mult:6,suf:['Fasteners','Tool & Die','Plastics']}
+};
+const PREFIX=['Midwest','Summit','Blue Ridge','Lakeside','Ironwood','Sunbelt','Pioneer','Harbor','Copperline','Prairie','Northstar','Bayou','Redwood','Keystone','Cedar Valley','Gulf Coast','Twin Rivers','Old Mill','High Plains','Silver Creek','Granite','Bluewater','Foxhollow','Tri-County'];
+
+const TRAITS={
+  cooked:{n:'Cooked Books',bad:true,d:'Reported EBITDA is about 25% inflated.'},
+  lawsuit:{n:'Pending Lawsuit',bad:true,d:'A settlement of about 1.5× EBITDA lands in year 2.'},
+  keyperson:{n:'Key-Person Risk',bad:true,d:'The founder runs everything. Replacing the CEO backfires, and they may quit.'},
+  concentration:{n:'Customer Concentration',bad:true,d:'One customer is a quarter of sales and may leave.'},
+  union:{n:'Union Trouble',bad:true,d:'Cost cuts and layoffs trigger strikes.'},
+  maintenance:{n:'Deferred Maintenance',bad:true,d:'About 1× EBITDA of surprise repairs in year 1.'},
+  realestate:{n:'Hidden Real Estate',bad:false,d:'Owns valuable property. Breakups and sale-leasebacks pay more.'},
+  pricing:{n:'Pricing Power',bad:false,d:'Customers tolerate price hikes. Raise Prices is doubled.'},
+  patent:{n:'Unused Patent',bad:false,d:'May license for a cash windfall.'},
+  loyal:{n:'Loyal Customers',bad:false,d:'Grows about 2% faster than the numbers show.'},
+  bloated:{n:'Bloated Costs',bad:false,d:'Fat to trim. Cut Costs is doubled.'},
+  founder:{n:'Motivated Seller',bad:false,d:'The founder wants out. Price drops 12% once you know.'}
+};
+
+const RIVALS=[
+  {name:'Kestrel Partners',bias:0.12,loves:null},
+  {name:'Monolith Capital',bias:0,loves:'Manufacturing'},
+  {name:'Vantablack Growth',bias:0.04,loves:'Software'}
+];
+
+const FOUNDERS={
+  banker:{n:'Ex-Investment Banker',lev:5,bw:3,op:0.8,rate:-0.005,conn:'insider',
+    deck:['cut','cut','raise','recap','refi','paydown','consult','network','slb'],
+    d:'Borrows up to 5× EBITDA at cheaper rates and starts with the Auction Insider. Operational cards are 20% weaker. 3 bandwidth a year.'},
+  operator:{n:'Former Operator',lev:3.5,bw:4,op:1.25,rate:0,conn:'guru',
+    deck:['cut','cut','raise','raise','ceo','overhaul','consult','network','pivot'],
+    d:'Operational cards are 25% stronger and you get 4 bandwidth a year. Starts with the Turnaround Guru. Lenders cap you at 3.5× EBITDA.'}
+};
+
+const CONNS={
+  banker:{n:'Friendly Banker',d:'+1× EBITDA borrowing limit on every deal.'},
+  golf:{n:"Senator's Golf Buddy",d:'The first investigation each fund is quietly dropped.'},
+  mckinsey:{n:'Ex-Consultant Associate',d:'Your first Cut Costs each year costs 0 bandwidth.'},
+  whisper:{n:'Pension Fund Whisperer',d:'Fundraising targets are 15% lower.'},
+  barbarians:{n:'Dog-Eared "Barbarians at the Gate"',d:'Each diligence round reveals 2 traits.'},
+  prfirm:{n:'PR Firm on Retainer',d:'The first reporter each fund is handled for free.'},
+  cayman:{n:'Cayman Lawyer',d:'Carry +25%. Heat +3 every year.'},
+  insider:{n:'Auction Insider',d:"See roughly where the top rival will walk away in auctions."},
+  guru:{n:'Turnaround Guru',d:'Shrinking companies you buy get +4% growth.'},
+  rolodex:{n:'Rolodex of CFOs',d:'Draw 1 extra card each year.'},
+  dog:{n:'Office Dog',d:'Reputation +1 every year.'},
+  vulture:{n:'Distressed Debt Desk',d:'Distressed deals are 10% cheaper.'},
+  shredder:{n:'Shredder Pro 3000',d:'Evidence goes cold after 3 years instead of 5.'},
+  hype:{n:'Hype Machine',d:'Strategic sales in the hot sector pay 10% more.'},
+  club:{n:'Club Membership',d:'Conference prices −20% and one extra card on offer.'},
+  second:{n:'Second Chair',d:'+1 bandwidth every year.'}
+};
+
+const LAWS={
+  loophole:{n:'Carried Interest Loophole',d:'Your carry is taxed like a capital gain. Carry ×1.5.'},
+  interest:{n:'Interest Deduction Expansion',d:'Interest costs −30% at every company.'},
+  antitrust:{n:'Antitrust Relaxation',d:'Clears the final antitrust review. Platform premium doubles.'}
+};
+
+const OFF_NAMES=['Dale Pruitt','Anne Holloway','Wade Kimball','Rita Vasquez','Hugh Barnaby','Lorraine Cobb','Gus Feeney','Priya Natarajan','Bo Whitlock','Marjorie Tull','Felix Ortega','Constance Reed'];
+const OFF_TRAITS={
+  greedy:{n:'Greedy',d:'Takes the money and delivers.'},
+  unreliable:{n:'Unreliable',d:'Takes the money. Delivers nothing.'},
+  bought:{n:'Already Bought',d:'Works for a rival firm.'},
+  honest:{n:'Honest',d:'Will report you.'},
+  sting:{n:'Wired',d:'Cooperating with prosecutors.'},
+  escalator:{n:'Escalator',d:'Delivers, then keeps asking for more.'}
+};
+
+/* ---------- small state helpers ---------- */
+const hasConn=k=>S.conns.includes(k);
+const has=(c,k)=>c.traits.some(t=>t.k===k);
+function trig(c,k){const t=c.traits.find(t=>t.k===k);if(t)t.rev=true;return !!t;}
+function dropTrait(c,k){c.traits=c.traits.filter(t=>t.k!==k);}
+const OPM=()=>FOUNDERS[S.founder].op;
+function rep(d){S.rep=clamp(S.rep+d,0,100);}
+function heat(d){S.heat=clamp(S.heat+d,0,100);}
+function log(msg,cls){S.log.unshift({y:`${FUNDNAMES[S.fund.n-1]} Y${S.year}`,msg,cls:cls||''});if(S.log.length>80)S.log.length=80;}
+function news(s){S.news.unshift(`${calYear()}: ${s}`);}
+function addEvidence(crime){S.evidence.push({id:S.uid++,crime,age:0});}
+const co=id=>S.companies.find(c=>c.id===id);
+const bribeCost=()=>0.8*sc();
+function levCap(){return FOUNDERS[S.founder].lev+(hasConn('banker')?1:0);}
+
+/* ---------- valuation ---------- */
+function health(c){return c.growth<0?'Failing':c.growth>=0.08?'Thriving':'Steady';}
+function mult(c){
+  let m=SECTORS[c.sector].mult*S.mkt;
+  if(c.sector===S.hot)m*=1.25; if(c.sector===S.cold)m*=0.8;
+  const h=health(c); if(h==='Failing')m*=0.65; else if(h==='Thriving')m*=1.2;
+  m+=1.5*Math.log10(Math.max(c.ebitda,0.5));
+  m+=c.multBonus;
+  if(c.platform>=2)m+=S.laws.antitrust?2:1;
+  return Math.max(2,m);
+}
+function value(c){return Math.max(0,c.ebitda)*mult(c)*(1+(c.inflated||0));}
+function equity(c){return Math.max(0,value(c)-c.debt);}
+function nav(){return S.companies.reduce((s,c)=>s+equity(c),0);}
+function fundMoic(){const f=S.fund;return (f.cash+f.dist+nav())/f.size;}
+function largest(){return S.companies.slice().sort((a,b)=>value(b)-value(a))[0]||null;}
+
+/* ---------- companies ---------- */
+function genName(sector){
+  for(let i=0;i<30;i++){const n=`${pick(PREFIX)} ${pick(SECTORS[sector].suf)}`;if(!S.usedNames.includes(n)){S.usedNames.push(n);return n;}}
+  return `${pick(PREFIX)} ${sector} #${S.uid}`;
+}
+function genCompany(h,extraBad){
+  const sector=pick(Object.keys(SECTORS));
+  const g={Failing:[-0.12,-0.03],Steady:[0.01,0.06],Thriving:[0.08,0.16]}[h];
+  const e={Failing:[0.012,0.04],Steady:[0.02,0.06],Thriving:[0.02,0.05]}[h];
+  const c={id:S.uid++,name:genName(sector),sector,ebitda:S.fund.size*rf(e[0],e[1]),growth:rf(g[0],g[1]),
+    multBonus:0,debt:0,rateAdj:0,platform:0,traits:[],assetKnown:false,owned:false,yearsOwned:0,cost:0,
+    strategic:false,inflated:0,slb:false,aiwash:0};
+  const bad=['cooked','lawsuit','keyperson','concentration','union','maintenance'];
+  const good=['realestate','pricing','patent','loyal','bloated','founder'];
+  const nb={Failing:2,Steady:1,Thriving:chance(0.5)?1:0}[h]+(extraBad||0);
+  let ng={Failing:chance(0.5)?1:0,Steady:1,Thriving:1}[h]; if(chance(0.3))ng++;
+  shuffle(bad).slice(0,nb).forEach(k=>c.traits.push({k,rev:false}));
+  shuffle(good).slice(0,ng).forEach(k=>c.traits.push({k,rev:false}));
+  c.traits=shuffle(c.traits);
+  const v=value(c);
+  c.assetValue=v*({Failing:rf(0.9,1.5),Steady:rf(0.35,0.75),Thriving:rf(0.2,0.45)}[h])+(has(c,'realestate')?v*0.6:0);
+  if(has(c,'cooked'))c.ebitda/=0.75;
+  return c;
+}
+function makeOffer(c,kind,premium){const o={c,kind,premium,price:0,dd:0,ddMax:kind==='auction'?1:9,done:false,disc:false};recalcOffer(o);return o;}
+function recalcOffer(o){o.price=value(o.c)*o.premium*(o.disc?0.88:1);}
+function maxDebt(c,price){return Math.min(levCap()*c.ebitda,0.8*price);}
+function canFinance(c,price){return price-maxDebt(c,price)<=S.fund.cash+1e-9;}
+function ddCost(o){return 0.15*sc()+0.01*o.price;}
+
+/* ---------- cards ---------- */
+function strike(c){trig(c,'union');c.ebitda*=0.9;c.growth-=0.01;log(`Workers at ${c.name} walked out. EBITDA −10%, growth −1%.`,'bad');}
+function needCash(x){if(S.fund.cash<x){log(`Not enough fund cash (${fm(x)} needed).`,'bad');return false;}S.fund.cash-=x;return true;}
+function needPersonal(x){if(S.personal<x){log(`Not enough personal money (${fm(x)} needed).`,'bad');return false;}S.personal-=x;return true;}
+const CARDS={
+  cut:{n:'Cut Costs',c:1,t:'co',r:'common',tier:'legal',d:'EBITDA +8%. Doubled with Bloated Costs. Union Trouble causes a strike.',
+    p:c=>{let g=0.08*OPM();if(trig(c,'bloated'))g*=2;c.ebitda*=1+g;log(`Cut costs at ${c.name}: EBITDA ${pct(g)}.`);if(has(c,'union'))strike(c);}},
+  raise:{n:'Raise Prices',c:1,t:'co',r:'common',tier:'legal',d:'EBITDA +6%. Doubled with Pricing Power; otherwise 25% chance growth −1%.',
+    p:c=>{let g=0.06*OPM();if(trig(c,'pricing'))g*=2;else if(chance(0.25)){c.growth-=0.01;log(`Some ${c.name} customers left over the price hike. Growth −1%.`,'bad');}c.ebitda*=1+g;log(`Raised prices at ${c.name}: EBITDA ${pct(g)}.`);}},
+  ceo:{n:'Replace the CEO',c:2,t:'co',r:'common',tier:'legal',d:'Growth +3% (to at least +2%), EBITDA +3%. Backfires with Key-Person Risk.',
+    p:c=>{if(trig(c,'keyperson')){c.ebitda*=0.8;dropTrait(c,'keyperson');log(`The founder of ${c.name} left with the customer list. EBITDA −20%.`,'bad');return;}
+      c.growth=Math.max(c.growth+0.03*OPM(),0.02);c.ebitda*=1.03;log(`New CEO at ${c.name}. Growth now ${pct(c.growth)}.`);}},
+  overhaul:{n:'Process Overhaul',c:2,t:'co',r:'common',tier:'legal',d:'Growth +3%.',
+    p:c=>{c.growth+=0.03*OPM();log(`Process overhaul at ${c.name}. Growth now ${pct(c.growth)}.`);}},
+  consult:{n:'Hire Consultants',c:1,t:'co',r:'common',tier:'legal',d:'Reveal every hidden trait and the breakup value. EBITDA +3%.',
+    p:c=>{c.traits.forEach(t=>t.rev=true);c.assetKnown=true;c.ebitda*=1.03;log(`Consultants finished their deck on ${c.name}. Everything is on the table.`);}},
+  recap:{n:'Dividend Recap',c:1,t:'co',r:'common',tier:'gray',d:'Borrow 1.5× EBITDA more and pay it straight to the fund. Reputation −2.',
+    p:c=>{const nd=1.5*c.ebitda;if((c.debt+nd)/c.ebitda>levCap()+1.5){log(`Lenders refuse more debt for ${c.name}.`,'bad');return false;}
+      c.debt+=nd;S.fund.dist+=nd;rep(-2);log(`Dividend recap at ${c.name}: ${fm(nd)} paid to the fund.`);}},
+  slb:{n:'Sale-Leaseback',c:1,t:'co',r:'common',tier:'gray',d:'Sell the property and rent it back: cash out 35% of breakup value. EBITDA −8%. Once per company.',
+    p:c=>{if(c.slb){log(`${c.name} has nothing left to sell and lease back.`,'bad');return false;}
+      let cash=c.assetValue*0.35;if(trig(c,'realestate'))cash*=1.3;c.assetValue-=cash;c.slb=true;c.assetKnown=true;c.ebitda*=0.92;S.fund.dist+=cash;
+      log(`Sale-leaseback at ${c.name}: ${fm(cash)} to the fund.`);}},
+  refi:{n:'Refinance',c:1,t:'co',r:'common',tier:'legal',d:'Interest rate −1.5% at this company (down to −3%).',
+    p:c=>{if(c.rateAdj<=-0.03){log(`${c.name} is already on the best terms available.`,'bad');return false;}c.rateAdj-=0.015;log(`Refinanced ${c.name}.`);}},
+  addon:{n:'Add-On Acquisition',c:2,t:'co',r:'uncommon',tier:'legal',d:'Buy a small competitor at 5× EBITDA (half debt). Adds 25–40% EBITDA and builds a platform.',
+    p:c=>{const e=c.ebitda*rf(0.25,0.4),price=e*5*S.mkt,eq=price*0.5;if(!needCash(eq))return false;
+      c.debt+=price-eq;c.cost+=eq;c.ebitda+=e;c.platform++;log(`${c.name} bolted on a competitor for ${fm(price)}. Platform size ${c.platform}.`,'good');}},
+  digital:{n:'Digital Transformation',c:2,t:'co',r:'uncommon',tier:'legal',d:'Costs 40% of EBITDA in fund cash. Growth +5%.',
+    p:c=>{if(!needCash(0.4*c.ebitda))return false;c.cost+=0.4*c.ebitda;c.growth+=0.05*OPM();log(`${c.name} now has an app. Growth now ${pct(c.growth)}.`);}},
+  offshore:{n:'Offshore Production',c:1,t:'co',r:'uncommon',tier:'gray',d:'EBITDA +15%. Reputation −4.',
+    p:c=>{c.ebitda*=1.15;rep(-4);log(`Moved ${c.name} production overseas. EBITDA +15%.`);}},
+  layoffs:{n:'Mass Layoffs',c:1,t:'co',r:'common',tier:'gray',d:'EBITDA +12%, growth −1%. Reputation −3. Union Trouble causes a strike.',
+    p:c=>{c.ebitda*=1.12;c.growth-=0.01;rep(-3);log(`Layoffs at ${c.name}. EBITDA +12%.`);if(has(c,'union'))strike(c);}},
+  expand:{n:'Expand Overseas',c:2,t:'co',r:'uncommon',tier:'legal',d:'Costs 50% of EBITDA in fund cash. Growth +4%.',
+    p:c=>{if(!needCash(0.5*c.ebitda))return false;c.cost+=0.5*c.ebitda;c.growth+=0.04;log(`${c.name} opened overseas. Growth now ${pct(c.growth)}.`);}},
+  network:{n:'Networking Lunch',c:0,t:'none',r:'common',tier:'legal',d:'Draw 2 cards.',p:()=>{draw(2);log('Lunch at the club. Two new ideas.');}},
+  press:{n:'Puff-Piece Press Release',c:1,t:'none',r:'common',tier:'legal',d:'Reputation +4.',p:()=>{rep(4);log('A glowing profile ran in a trade magazine. Reputation +4.');}},
+  gala:{n:'Charity Gala',c:1,t:'none',r:'uncommon',tier:'legal',d:'Reputation +8. Costs personal money (0.4 per $50M of fund).',
+    p:()=>{if(!needPersonal(0.4*sc()))return false;rep(8);log('You hosted a gala for a children’s hospital. Reputation +8.','good');}},
+  lobby:{n:'Lobbyist Retainer',c:1,t:'none',r:'uncommon',tier:'legal',d:'Influence +2. Costs personal money (0.3 per $50M of fund).',
+    p:()=>{if(!needPersonal(0.3*sc()))return false;S.influence+=2;log('Lobbyist hired. Influence +2.');}},
+  cayman:{n:'Cayman Structure',c:1,t:'none',r:'uncommon',tier:'gray',d:'Route fees offshore: personal money +0.6 per $50M of fund. Heat +6.',
+    p:()=>{const x=0.6*sc();S.personal+=x;heat(6);log(`Fees routed through the Caymans: ${fm(x)} kept.`);}},
+  creative:{n:'Creative Accounting',c:0,t:'co',r:'uncommon',tier:'illegal',d:'This company’s value +20% until sold. Evidence +1, heat +10.',
+    p:c=>{if(c.inflated){log(`${c.name}’s numbers can’t be stretched any further.`,'bad');return false;}c.inflated=0.2;addEvidence('accounting fraud');heat(10);log(`${c.name}’s books got creative. Value +20%.`,'warn');}},
+  insider:{n:'Insider Tip',c:1,t:'none',r:'rare',tier:'illegal',d:'Trade on a tip: personal money +1.5 per $50M of fund. Evidence +1, heat +12.',
+    p:()=>{const x=1.5*sc();S.personal+=x;addEvidence('insider trading');heat(12);log(`A well-timed trade made you ${fm(x)}.`,'warn');}},
+  bribe:{n:'Envelope of Cash',c:1,t:'none',r:'uncommon',tier:'illegal',d:'Pay off an official: a zoning commissioner (largest company EBITDA +10%), a regulator (Heat −25) or a senator (Influence +4).',
+    p:()=>{bribeCard();}},
+  shred:{n:'Shred Documents',c:1,t:'none',r:'uncommon',tier:'illegal',d:'Destroy your oldest evidence. 30% chance it creates new evidence. Heat +5.',
+    p:()=>{if(!S.evidence.length){log('Nothing to shred.');return false;}const e=S.evidence.shift();heat(5);log(`Shredded the ${e.crime} paper trail.`,'warn');if(chance(0.3)){addEvidence('obstruction of justice');log('An intern saw you do it.','bad');}}},
+  spin:{n:'PR Spin Doctor',c:1,t:'none',r:'common',tier:'legal',d:'Heat −12.',p:()=>{heat(-12);log('The story changed. Heat −12.');}},
+  lawyer:{n:'Lawyers on Retainer',c:1,t:'none',r:'uncommon',tier:'legal',d:'Heat −6. Your next “hire lawyers” defense is guaranteed to work.',
+    p:()=>{heat(-6);S.lawyered=true;log('Top-tier lawyers on retainer.');}},
+  unionbust:{n:'Union Busting',c:1,t:'co',r:'uncommon',tier:'illegal',d:'Removes Union Trouble, EBITDA +5%. Evidence +1, heat +8.',
+    p:c=>{dropTrait(c,'union');c.ebitda*=1.05;addEvidence('illegal union busting');heat(8);log(`Organizers at ${c.name} were “let go.” EBITDA +5%.`,'warn');}},
+  pivot:{n:'Strategic Pivot',c:2,t:'co',r:'uncommon',tier:'legal',d:'Growth becomes at least +4%. EBITDA −5%.',
+    p:c=>{c.growth=Math.max(c.growth,0.04*OPM());c.ebitda*=0.95;log(`${c.name} pivoted. Growth now ${pct(c.growth)}.`);}},
+  aiwash:{n:'AI-Wash the Brand',c:1,t:'co',r:'uncommon',tier:'gray',d:'Valuation multiple +1.5 (twice per company at most). Reputation −1.',
+    p:c=>{if(c.aiwash>=2){log(`Nobody believes ${c.name} is an AI company anymore.`,'bad');return false;}c.aiwash++;c.multBonus+=1.5;rep(-1);log(`${c.name} is now “AI-powered.” Multiple +1.5.`);}},
+  offsite:{n:'Management Offsite',c:1,t:'none',r:'uncommon',tier:'legal',d:'Growth +1% at every company you own.',
+    p:()=>{S.companies.forEach(c=>c.growth+=0.01);log('Trust falls in Scottsdale. Growth +1% everywhere.');}},
+  paydown:{n:'Debt Paydown',c:1,t:'co',r:'common',tier:'legal',d:'Use fund cash to repay up to 1.5× EBITDA of this company’s debt.',
+    p:c=>{const x=Math.min(c.debt,1.5*c.ebitda,S.fund.cash);if(x<=0){log('Nothing to pay down.','bad');return false;}S.fund.cash-=x;c.debt-=x;c.cost+=x;log(`Paid down ${fm(x)} of ${c.name}’s debt.`);}},
+  squeeze:{n:'Squeeze Suppliers',c:1,t:'co',r:'common',tier:'legal',d:'EBITDA +5%. Reputation −1.',
+    p:c=>{c.ebitda*=1.05;rep(-1);log(`${c.name} now pays suppliers in 120 days. EBITDA +5%.`);}},
+  greenwash:{n:'Greenwashing Report',c:1,t:'none',r:'uncommon',tier:'gray',d:'Reputation +6, heat +4. 35% chance of evidence.',
+    p:()=>{rep(6);heat(4);if(chance(0.35))addEvidence('misleading ESG claims');log('A glossy sustainability report. Lots of leaves on the cover.');}}
+};
+function cardCost(k){if(k==='cut'&&hasConn('mckinsey')&&!S.mckUsed)return 0;return CARDS[k].c;}
+function draw(n){for(let i=0;i<n;i++){if(!S.deck.length){S.deck=shuffle(S.discard);S.discard=[];}if(!S.deck.length)break;S.hand.push(S.deck.pop());}}
+function addCard(k){S.cards.push(k);S.discard.push(k);}
+function removeCard(k){const i=S.cards.indexOf(k);if(i<0)return;S.cards.splice(i,1);for(const pile of [S.deck,S.discard,S.hand]){const j=pile.indexOf(k);if(j>=0){pile.splice(j,1);return;}}}
+function draftCards(n,rareOnly){
+  const w={common:6,uncommon:3,rare:1};const out=[];
+  const keys=Object.keys(CARDS).filter(k=>!rareOnly||CARDS[k].r!=='common');
+  for(let t=0;t<60&&out.length<n;t++){const o={};keys.forEach(k=>{if(!out.includes(k))o[k]=w[CARDS[k].r];});out.push(wpick(o));}
+  return out;
+}
+function draftConns(n){return shuffle(Object.keys(CONNS).filter(k=>!S.conns.includes(k))).slice(0,n);}
+
+/* ---------- modals ---------- */
+const queue=m=>Q.push(m);
+const next=m=>Q.unshift(m);
+function info(title,body){return {title,body,choices:[{label:'Continue'}]};}
+function cardRewardModal(why){
+  const opts=draftCards(3);
+  return {title:'Add a Play to Your Playbook',body:`${why} Pick one card for your deck, or skip.`,
+    choices:opts.map(k=>({label:CARDS[k].n,sub:`${CARDS[k].c} bandwidth · ${CARDS[k].d}`,cls:CARDS[k].tier,fn:()=>{addCard(k);log(`Added ${CARDS[k].n} to your playbook.`);}})).concat([{label:'Skip'}])};
+}
+function connRewardModal(){
+  const opts=draftConns(3);
+  if(!opts.length)return info('Connections','You already know everyone worth knowing.');
+  return {title:'You Made a Connection',body:'Winning that auction got you noticed. Choose one.',
+    choices:opts.map(k=>({label:CONNS[k].n,sub:CONNS[k].d,fn:()=>{S.conns.push(k);log(`New connection: ${CONNS[k].n}.`,'good');}}))};
+}
+
+/* ---------- bribery ---------- */
+function genOfficials(){const names=shuffle(OFF_NAMES);return ['Zoning Commissioner','Regulator','Senator'].map((role,i)=>({id:i,name:names[i],role,trait:wpick({greedy:35,unreliable:15,bought:15,honest:15,sting:10,escalator:10}),known:false,demand:false}));}
+function bribeModal(o){
+  const bc=bribeCost();const offs=S.officials.filter(x=>!o.role||x.role===o.role);const choices=[];
+  offs.forEach(of=>{
+    if(!of.known)choices.push({label:`Background check on ${of.name}`,sub:`${fm(bc*0.25)} personal · learn what they’re really like`,disabled:()=>S.personal<bc*0.25,
+      fn:()=>{S.personal-=bc*0.25;of.known=true;next(bribeModal(o));}});
+    choices.push({label:`Pay ${of.name}, ${of.role}`,sub:`${fm(bc)} personal · ${of.known?OFF_TRAITS[of.trait].n+': '+OFF_TRAITS[of.trait].d:'character unknown'}`,cls:'illegal',
+      disabled:()=>S.personal<bc,fn:()=>resolveBribe(of,bc,o)});
+  });
+  choices.push({label:'Back off',fn:()=>{o.onBackoff&&o.onBackoff();}});
+  return {title:'Envelope of Cash',body:`${o.purpose}<br><span class="muted small">You have ${fm(S.personal)} of personal money. Every bribe that lands leaves evidence.</span>`,choices};
+}
+function resolveBribe(of,bc,o){
+  S.personal-=bc;of.known=true;let msg='';
+  switch(of.trait){
+    case 'greedy':addEvidence('bribery');heat(4);msg=`${of.name} took the envelope and delivered.`;o.onSuccess(of);break;
+    case 'escalator':addEvidence('bribery');heat(4);of.demand=true;msg=`${of.name} delivered. Then smiled and said, “See you next year.”`;o.onSuccess(of);break;
+    case 'unreliable':addEvidence('bribery');msg=`${of.name} took the money and did nothing.`;o.onFail&&o.onFail();break;
+    case 'bought':heat(15);S.rivalBoost=true;msg=`${of.name} already works for ${pick(RIVALS).name}. They know your playbook now (rivals bid harder at the next auction). Heat +15.`;o.onFail&&o.onFail();break;
+    case 'honest':heat(20);msg=`${of.name} refused and called a reporter. Heat +20.`;o.onFail&&o.onFail();openCase('attempted bribery',1);break;
+    case 'sting':heat(25);msg=`${of.name} was wearing a wire. Heat +25.`;o.onFail&&o.onFail();openCase('bribery, on tape',2);break;
+  }
+  log(msg,of.trait==='greedy'||of.trait==='escalator'?'warn':'bad');
+  next(info('The Envelope',msg));
+}
+function bribeCard(){
+  queue(bribeModal({purpose:'Who gets the envelope? A zoning commissioner fast-tracks permits at your largest company (EBITDA +10%). A regulator makes problems go away (Heat −25, a reporter loses interest). A senator delivers votes (Influence +4).',
+    onSuccess:of=>{
+      if(of.role==='Zoning Commissioner'){const c=largest();if(c){c.ebitda*=1.1;log(`Permits for ${c.name} came through overnight. EBITDA +10%.`);}}
+      else if(of.role==='Regulator'){heat(-25);const cs=S.cases.find(x=>x.stage===1);if(cs)closeCase(cs,'The reporter’s source stopped returning calls.');}
+      else{S.influence+=4;}
+    }}));
+}
+
+/* ---------- legal trouble ---------- */
+function openCase(crime,stage){
+  stage=stage||1;
+  if(hasConn('golf')&&!S.golfUsed){S.golfUsed=true;log(`A look into ${crime} was quietly dropped. Your golf buddy made a call.`,'good');return;}
+  if(stage===1&&hasConn('prfirm')&&!S.prUsed){S.prUsed=true;log(`A reporter asked about ${crime}. Your PR firm buried it.`,'good');return;}
+  const cs={id:S.uid++,crime,stage};S.cases.push(cs);queue(caseModal(cs));
+}
+function closeCase(cs,msg){S.cases=S.cases.filter(x=>x!==cs);if(msg)log(msg,'good');}
+function caseModal(cs){
+  const bc=bribeCost();
+  if(cs.stage===1)return {title:'A Reporter Is Asking Questions',body:`A journalist is digging into <b>${esc(cs.crime)}</b> at ${esc(S.firm)}.`,choices:[
+    {label:'Hire a crisis PR firm',sub:`${fm(0.5*bc)} personal · 65% the story dies`,disabled:()=>S.personal<0.5*bc,fn:()=>{S.personal-=0.5*bc;if(chance(0.65))closeCase(cs,'The story died.');else{cs.stage=2;cs.wait=true;log('The story ran anyway. Regulators noticed.','bad');}}},
+    {label:'Stonewall',sub:'Heat +10 · 50% it goes away, otherwise regulators get involved next year',fn:()=>{heat(10);if(chance(0.5))closeCase(cs,'The reporter moved on.');else{cs.stage=2;cs.wait=true;}}},
+    {label:'Leak dirt on a rival instead',sub:'Gray · reputation −2, evidence +1, story dies',cls:'gray',fn:()=>{rep(-2);addEvidence('leaking confidential information');closeCase(cs,`The press got distracted by a scandal at ${pick(RIVALS).name}.`);}}]};
+  if(cs.stage===2)return {title:'Regulators Open an Investigation',body:`The Securities Commission has opened a formal investigation into <b>${esc(cs.crime)}</b>.`,choices:[
+    {label:'Hire top lawyers',sub:`${fm(1.5*bc)} personal · ${S.lawyered?'guaranteed (retainer)':'60% the case closes'}`,disabled:()=>S.personal<1.5*bc,fn:()=>{S.personal-=1.5*bc;const ok=S.lawyered||chance(0.6);S.lawyered=false;if(ok)closeCase(cs,'Your lawyers buried them in paperwork. Case closed.');else{cs.stage=3;cs.wait=true;log('The investigation is escalating.','bad');}}},
+    {label:'Cooperate and pay a fine',sub:`${fm(2*bc)} personal · reputation −8 · case closes`,disabled:()=>S.personal<2*bc,fn:()=>{S.personal-=2*bc;rep(-8);news(`${S.firm} fined over ${cs.crime}.`);closeCase(cs,'Fine paid. Case closed.');}},
+    {label:'Obstruct',sub:'Illegal · 50% the case collapses, otherwise a subpoena now, evidence +1, heat +15',cls:'illegal',fn:()=>{if(chance(0.5))closeCase(cs,'Key documents went missing. The case collapsed.');else{addEvidence('obstruction of justice');heat(15);cs.stage=3;next(caseModal(cs));}}}]};
+  return {title:'Subpoena',body:`Prosecutors want you to testify about <b>${esc(cs.crime)}</b>.`,choices:[
+    {label:'Blame your COO',sub:S.fallGuys<2?'Reputation −12 · case closes · works twice per career':'Nobody left to blame',disabled:()=>S.fallGuys>=2,fn:()=>{S.fallGuys++;rep(-12);news(`${S.firm} COO resigns amid ${cs.crime} probe.`);closeCase(cs,'Your COO took the fall.');}},
+    {label:'Settle without admitting wrongdoing',sub:`${fm(4*bc+0.1*S.personal)} personal · reputation −15`,disabled:()=>S.personal<4*bc+0.1*S.personal,fn:()=>{S.personal-=4*bc+0.1*S.personal;rep(-15);news(`${S.firm} settles ${cs.crime} charges, neither admitting nor denying wrongdoing.`);closeCase(cs,'Settled.');}},
+    {label:'Go to trial',sub:'45% acquittal (reputation −5). Otherwise prison.',fn:()=>{if(chance(0.45)){rep(-5);news(`${S.firm} founder acquitted of ${cs.crime}.`);closeCase(cs,'Acquitted!');}else{news(`${S.firm} founder convicted of ${cs.crime}.`);gameOver('Convicted',`The jury did not buy it. You were convicted of ${cs.crime}.`);}}}]};
+}
+
+/* ---------- covenant & disposal ---------- */
+function breachModal(c){
+  const need=Math.max(0,c.debt-5*c.ebitda);
+  return {title:`${c.name} Breached Its Covenants`,body:`Debt is ${(c.debt/c.ebitda).toFixed(1)}× EBITDA and lenders allow 7×. Put in equity to bring it down to 5×, or hand the company to the lenders.`,choices:[
+    {label:`Inject ${fm(need)} from the fund`,sub:`You have ${fm(S.fund.cash)} of fund cash`,disabled:()=>S.fund.cash<need,fn:()=>{if(!co(c.id))return;S.fund.cash-=need;c.debt-=need;c.cost+=need;log(`Injected ${fm(need)} into ${c.name}.`);}},
+    {label:'Hand the keys to the lenders',sub:'You lose the company. Reputation −5.',fn:()=>{if(co(c.id))handKeys(c);}}]};
+}
+function handKeys(c){S.companies=S.companies.filter(x=>x!==c);rep(-5);S.fund.exits.push({name:c.name,moic:0,net:0});news(`${c.name} collapses under ${S.firm}’s debt.`);log(`Lost ${c.name} to its lenders.`,'bad');}
+function salePE(c){return value(c)*0.97;}
+function saleStrat(c){return value(c)*(1.15+S.exitBoost)*(c.sector===S.hot&&hasConn('hype')?1.1:1);}
+function saleBreak(c){return c.assetValue*0.95;}
+function realize(c,net,kind){
+  S.fund.dist+=net;S.companies=S.companies.filter(x=>x!==c);
+  const m=c.cost>0?net/c.cost:0;S.fund.exits.push({name:c.name,moic:m,net});
+  if(kind==='break'){rep(c.growth<0?-2:-5);news(`${c.name} broken up and sold for parts. ${ri(60,500)*Math.ceil(Math.sqrt(sc()))} jobs lost.`);}
+  else news(`${S.firm} sells ${c.name} to ${kind==='pe'?pick(RIVALS).name:kind==='family'?'the founding family':'a strategic buyer'} for ${fm(net+c.debt)}.`);
+  log(`Sold ${c.name}: ${fm(net)} to the fund (${m.toFixed(2)}× on equity).`,'good');
+}
+
+/* ---------- events ---------- */
+function anyCo(){return S.companies.length?pick(S.companies):null;}
+const EVENTS=[
+  {id:'ceo',need:'co',make:c=>({title:'CEO Caught on Camera',body:`The CEO of <b>${esc(c.name)}</b> was filmed screaming at a waiter. The clip is everywhere.`,choices:[
+    {label:'Fire the CEO',sub:'EBITDA −5%, reputation +3',fn:()=>{c.ebitda*=0.95;rep(3);log(`Fired the CEO of ${c.name}.`);}},
+    {label:'Pay the waiter to delete it',sub:'Illegal · evidence +1, heat +6',cls:'illegal',fn:()=>{addEvidence('witness tampering');heat(6);log('The video quietly disappeared.','warn');}},
+    {label:'Ride it out',sub:'Reputation −5',fn:()=>rep(-5)}]})},
+  {id:'union',need:'co',make:c=>({title:`Union Vote at ${c.name}`,body:'Workers have filed for a union election.',choices:[
+    {label:'Accept the union',sub:'Growth −1%, reputation +4',fn:()=>{c.growth-=0.01;rep(4);}},
+    {label:'Fight it legally',sub:`${fm(0.5*sc())} personal · reputation −2`,disabled:()=>S.personal<0.5*sc(),fn:()=>{S.personal-=0.5*sc();rep(-2);}},
+    {label:'Fire the organizers',sub:'Illegal · EBITDA +4%, evidence +1, heat +10',cls:'illegal',fn:()=>{c.ebitda*=1.04;addEvidence('illegal union busting');heat(10);}}]})},
+  {id:'senator',make:()=>{const of=S.officials.find(o=>o.role==='Senator');return {title:'A Senator Calls',body:`Senator ${esc(of.name)} can make a rival’s financing “fall through” before your next auction. A ${fm(0.6*sc())} campaign contribution would help.`,choices:[
+    {label:'Contribute',sub:`${fm(0.6*sc())} personal · Illegal · evidence +1, heat +6 · one fewer rival next auction`,cls:'illegal',disabled:()=>S.personal<0.6*sc(),fn:()=>{S.personal-=0.6*sc();addEvidence('bribery');heat(6);S.rivalHandicap=true;}},
+    {label:'Decline politely',fn:()=>{}}]};}},
+  {id:'tip',make:()=>({title:'A Banker Friend Talks Too Much',body:'Over drinks, a friend mentions a merger that hasn’t been announced.',choices:[
+    {label:'Trade on it',sub:`Personal +${fm(2.5*sc())} · Illegal · evidence +1, heat +12`,cls:'illegal',fn:()=>{S.personal+=2.5*sc();addEvidence('insider trading');heat(12);}},
+    {label:'Report it to compliance',sub:'Reputation +3',fn:()=>rep(3)},
+    {label:'Change the subject',fn:()=>{}}]})},
+  {id:'town',need:'co',make:c=>({title:'The Millbrook Plant',body:`${esc(c.name)} could close its oldest site in the town of Millbrook. It’s the town’s biggest employer.`,choices:[
+    {label:'Close it',sub:'EBITDA +10%, reputation −6',cls:'gray',fn:()=>{c.ebitda*=1.1;rep(-6);news(`${c.name} closes Millbrook site. Town reeling.`);}},
+    {label:'Keep it open',sub:'Reputation +2',fn:()=>rep(2)}]})},
+  {id:'fed',make:()=>{const up=chance(0.55);return {title:up?'The Central Bank Hikes Rates':'The Central Bank Cuts Rates',body:up?'Rates rise 1.5 points. Borrowing just got pricier and buyers pay less.':'Rates fall 1.5 points. Money is cheap and buyers are hungry.',choices:[
+    {label:'Continue',fn:()=>{if(up){S.rate+=0.015;S.mkt=clamp(S.mkt-0.05,0.6,1.4);}else{S.rate=Math.max(0.02,S.rate-0.015);S.mkt=clamp(S.mkt+0.05,0.6,1.4);}}}]};}},
+  {id:'family',need:'co',make:c=>{const g=value(c)*1.1;return {title:'The Founder’s Grandson',body:`The founding family wants to buy back <b>${esc(c.name)}</b> for ${fm(g)} (10% over market). Debt is ${fm(c.debt)}.`,choices:[
+    {label:'Sell it back',sub:`${fm(g-c.debt)} to the fund · reputation +4`,disabled:()=>g<c.debt,fn:()=>{if(!co(c.id))return;rep(4);realize(c,g-c.debt,'family');}},
+    {label:'Decline',fn:()=>{}}]};}},
+  {id:'zoning',need:'co',make:c=>({title:'Permit Stuck at the Zoning Board',body:`An expansion at <b>${esc(c.name)}</b> is stuck waiting on permits.`,choices:[
+    {label:'Wait it out',sub:'EBITDA −6%',fn:()=>{c.ebitda*=0.94;}},
+    {label:'Lean on a lawmaker',sub:'Spend 2 influence · no loss',disabled:()=>S.influence<2,fn:()=>{S.influence-=2;}},
+    {label:'Approach the zoning commissioner',sub:'Illegal · opens a bribe',cls:'illegal',fn:()=>{next(bribeModal({role:'Zoning Commissioner',purpose:`Pay the zoning commissioner to approve ${esc(c.name)}’s permits? Success: EBITDA +6%. Failure: EBITDA −6%.`,
+      onSuccess:()=>{c.ebitda*=1.06;},onFail:()=>{c.ebitda*=0.94;},onBackoff:()=>{c.ebitda*=0.94;}}));}}]})},
+  {id:'whistle',need:'evidence',make:()=>{const e=S.evidence[0];return {title:'A Whistleblower Emerges',body:`A former employee has documents about <b>${esc(e.crime)}</b>.`,choices:[
+    {label:'Pay hush money',sub:`${fm(1*sc())} personal · Illegal · evidence +1`,cls:'illegal',disabled:()=>S.personal<sc(),fn:()=>{S.personal-=sc();addEvidence('hush money');}},
+    {label:'Let it go',sub:'The evidence surfaces now',fn:()=>{S.evidence=S.evidence.filter(x=>x!==e);openCase(e.crime,1);}},
+    {label:'Fire and sue them',sub:'Reputation −4 · 50% it surfaces anyway',fn:()=>{rep(-4);if(chance(0.5)){S.evidence=S.evidence.filter(x=>x!==e);openCase(e.crime,1);}}}]};}},
+  {id:'audit',make:()=>({title:'Tax Audit',body:'The tax authority wants to look at your management fee structure.',choices:[
+    {label:'Pay what they find',sub:`${fm(0.6*sc())} personal`,disabled:()=>S.personal<0.6*sc(),fn:()=>{S.personal-=0.6*sc();}},
+    {label:'“Lose” the records',sub:'Illegal · evidence +1, heat +8',cls:'illegal',fn:()=>{addEvidence('obstruction of justice');heat(8);}},
+    {label:'Fight it',sub:'50% you owe nothing, otherwise double',fn:()=>{if(!chance(0.5))S.personal=Math.max(0,S.personal-1.2*sc());}}]})},
+  {id:'pitch',make:()=>({title:'Consultants With a Slide Deck',body:'A consulting firm wants to sell you a “proprietary value creation framework.”',choices:[
+    {label:'Buy it',sub:`${fm(0.5*sc())} personal · pick a strong card`,disabled:()=>S.personal<0.5*sc(),fn:()=>{S.personal-=0.5*sc();const k=draftCards(3,true);next({title:'The Framework',body:'Choose one.',choices:k.map(x=>({label:CARDS[x].n,sub:CARDS[x].d,cls:CARDS[x].tier,fn:()=>addCard(x)}))});}},
+    {label:'Show them out',fn:()=>{}}]})},
+  {id:'esg',make:()=>({title:'An Investor Asks About ESG',body:'A university endowment wants your sustainability numbers before the next fund.',choices:[
+    {label:'Give an honest answer',sub:'Reputation +1',fn:()=>rep(1)},
+    {label:'Greenwash it',sub:'Gray · reputation +5, 35% chance of evidence',cls:'gray',fn:()=>{rep(5);if(chance(0.35))addEvidence('misleading ESG claims');}}]})},
+  {id:'hype',make:()=>{const s=pick(Object.keys(SECTORS).filter(x=>x!==S.hot));return {title:`Everyone Wants ${s}`,body:`A viral think piece declared ${s} “the next big thing.” ${s} is now the hot sector (valuations +25%).`,choices:[{label:'Continue',fn:()=>{if(S.cold===s)S.cold=S.hot;S.hot=s;}}]};}}
+];
+function runEvent(){
+  const ok=EVENTS.filter(e=>!e.need||(e.need==='co'&&S.companies.length)||(e.need==='evidence'&&S.evidence.length));
+  const e=pick(ok);const m=e.make(e.need==='co'?anyCo():null);
+  m.choices.forEach(ch=>{const f=ch.fn;ch.fn=()=>{f&&f();};});
+  queue(m);
+}
+
+/* ---------- map ---------- */
+const NODE_LABEL={deal:'Deal',auction:'Auction',distressed:'Distressed',conference:'Conference',retreat:'Golf Retreat',event:'Event',exit:'Exit Window'};
+const NODE_DESC={deal:'Two companies for sale at fair prices.',auction:'One great company. Bid against rivals. Winning earns a connection.',distressed:'Two broken companies, cheap. Many hidden problems.',conference:'Spend personal money on cards and connections.',retreat:'Recover reputation, cool heat, or charm investors.',event:'Something happens. You choose how to respond.',exit:'Strategic buyers are hunting: every sale this year pays 25% more.'};
+const BOSS=[{n:'LP Annual Meeting',d:'Your investors want answers before the fundraise.'},{n:'Rate Shock',d:'Rates +3 points, valuations −20%, EBITDA −10%. Lenders check covenants.'},{n:'Antitrust Review',d:'Regulators review your largest company before the final close.'}];
+function genMap(){
+  const rows=[];
+  for(let y=0;y<6;y++){const row=[];for(let l=0;l<3;l++){let t=y===0?pick(['deal','deal','distressed']):wpick({deal:30,auction:12,distressed:14,conference:12,retreat:8,event:18,exit:8});if(y<2&&t==='exit')t='deal';row.push(t);}
+    if(y===3&&!row.includes('conference'))row[ri(0,2)]='conference';rows.push(row);}
+  return rows;
+}
+const reachable=l=>S.year===1||S.pos===null||Math.abs(l-S.pos)<=1;
+
+/* ---------- flow ---------- */
+function startRun(firm,founder){
+  S={v:VERSION,rs:(Date.now()^Math.floor(Math.random()*1e9))|0,uid:1,firm,founder,phase:'map',rep:50,heat:0,influence:0,personal:0,
+    conns:[FOUNDERS[founder].conn],cards:FOUNDERS[founder].deck.slice(),deck:[],discard:[],hand:[],bw:0,companies:[],evidence:[],cases:[],officials:[],
+    bills:{loophole:0,interest:0,antitrust:0},laws:{},log:[],news:[],funds:[],usedNames:[],fallGuys:0,lpBonus:0,markup:0,exitBoost:0,
+    rivalHandicap:false,rivalBoost:false,lawyered:false,mckUsed:false,golfUsed:false,prUsed:false,rate:0.07,mkt:1,hot:null,cold:null,year:1,fund:{n:1,size:50}};
+  startFund(1,50,[]);
+}
+function rotateHype(){const k=shuffle(Object.keys(SECTORS));S.hot=k[0];S.cold=k[1];}
+function startFund(n,size,cont){
+  S.fund={n,size,cash:size,dist:0,fees:0,exits:[]};S.year=1;S.pos=null;S.path=[];S.map=genMap();S.officials=genOfficials();
+  S.rate=0.07+rf(-0.01,0.01);S.mkt=1;rotateHype();S.deck=shuffle(S.cards);S.discard=[];S.hand=[];
+  S.lpBonus=0;S.markup=0;S.golfUsed=false;S.prUsed=false;S.exitBoost=0;S.node=null;
+  cont.forEach(c=>{const eq=equity(c);S.fund.cash=Math.max(0,S.fund.cash-eq);c.cost=eq;S.companies.push(c);});
+  S.phase='map';log(`${FUNDNAMES[n-1]} closed at ${fm(size)}. Seven years to put it to work.`,'good');
+}
+function enterNode(t){
+  S.node={type:t};
+  switch(t){
+    case 'deal':S.node.offers=[0,1].map(()=>makeOffer(genCompany(wpick({Steady:50,Thriving:25,Failing:25})),'deal',rf(1.0,1.1)));break;
+    case 'distressed':S.node.offers=[0,1].map(()=>makeOffer(genCompany('Failing',chance(0.5)?1:0),'distressed',rf(0.65,0.8)*(hasConn('vulture')?0.9:1)));break;
+    case 'auction':{
+      const c=genCompany(chance(0.6)?'Thriving':'Steady');if(!c.traits.some(t=>!TRAITS[t.k].bad))c.traits.push({k:'loyal',rev:false});
+      const o=makeOffer(c,'auction',0.9);const v=value(c);
+      o.rivals=RIVALS.map(r=>({name:r.name,limit:v*(rf(0.95,1.3)+r.bias+(r.loves===c.sector?0.15:0)+(S.rivalBoost?0.1:0)),in:true}));
+      S.rivalBoost=false;
+      if(S.rivalHandicap){o.rivals.sort((a,b)=>b.limit-a.limit);const gone=o.rivals.shift();o.note=`${gone.name}’s financing fell through. They’re out.`;S.rivalHandicap=false;}
+      S.node.offers=[o];break;}
+    case 'conference':S.node.shop={cards:draftCards(hasConn('club')?4:3),conns:draftConns(2),sold:[]};break;
+    case 'exit':S.exitBoost=0.25;S.companies.forEach(c=>c.strategic=true);break;
+    case 'event':runEvent();pending=startOps;break;
+    case 'boss':runBoss();pending=startOps;break;
+  }
+  S.phase='node';
+}
+function runBoss(){
+  const n=S.fund.n;
+  if(n===1){queue({title:'LP Annual Meeting',body:`Your investors want the numbers. Fund MOIC right now is <b>${fundMoic().toFixed(2)}×</b>. The fundraise is at year’s end.`,choices:[
+    {label:'Tell the truth',sub:'Reputation +3',fn:()=>rep(3)},
+    {label:'Mark up the unrealized portfolio',sub:'Illegal · fundraise score +0.15, evidence +1, heat +10',cls:'illegal',fn:()=>{S.markup=0.15;addEvidence('valuation fraud');heat(10);}},
+    {label:'Wine and dine them',sub:`${fm(1.5*sc())} personal · fundraise score +0.07`,disabled:()=>S.personal<1.5*sc(),fn:()=>{S.personal-=1.5*sc();S.lpBonus+=0.07;}}]});}
+  else if(n===2){
+    S.rate+=0.03;S.mkt=clamp(S.mkt*0.8,0.5,1.4);S.companies.forEach(c=>c.ebitda*=0.9);
+    queue(info('Rate Shock','Rates jumped 3 points overnight. Valuations are down 20% and every company lost 10% of its EBITDA. Lenders are checking covenants.'));
+    S.companies.filter(c=>c.debt/c.ebitda>7).forEach(c=>queue(breachModal(c)));
+  } else {
+    const c=largest();
+    if(!c){queue(info('Antitrust Review','Regulators wanted to review your largest company. You don’t own any. They leave disappointed.'));return;}
+    if(S.laws.antitrust){queue(info('Antitrust Review',`Thanks to the Antitrust Relaxation Act, the review of ${esc(c.name)} took one afternoon. Cleared.`));return;}
+    const lose=()=>{c.multBonus-=2;c.growth-=0.02;news(`Regulators block ${c.name} expansion.`);log(`${c.name} lost its antitrust review. Multiple −2, growth −2%.`,'bad');};
+    queue({title:'Antitrust Review',body:`Regulators are reviewing <b>${esc(c.name)}</b> (${fm(value(c))}). If they rule against you, its multiple drops by 2 and growth by 2%.`,choices:[
+      {label:'Fight in court',sub:'50% cleared',fn:()=>{if(chance(0.5))log(`${c.name} cleared antitrust review.`,'good');else lose();}},
+      {label:'Call in favors',sub:'Spend 5 influence · cleared',disabled:()=>S.influence<5,fn:()=>{S.influence-=5;log('The review was quietly closed.','good');}},
+      {label:'Pay off the regulator',sub:'Illegal · opens a bribe',cls:'illegal',fn:()=>{next(bribeModal({role:'Regulator',purpose:`Pay the regulator to clear ${esc(c.name)}?`,onSuccess:()=>log(`${c.name} cleared antitrust review.`,'good'),onFail:lose,onBackoff:lose}));}},
+      {label:'Divest it now',sub:`Sell for 85% of value: ${fm(value(c)*0.85-c.debt)} to the fund`,disabled:()=>value(c)*0.85<c.debt,fn:()=>realize(c,value(c)*0.85-c.debt,'pe')}]});
+  }
+}
+function startOps(){S.phase='ops';S.node=null;S.buy=null;S.auc=null;S.bw=FOUNDERS[S.founder].bw+(hasConn('second')?1:0);draw(5+(hasConn('rolodex')?1:0));}
+function endYear(){
+  S.discard.push(...S.hand);S.hand=[];sel=null;
+  const f=S.fund;
+  // cases waiting from last year advance first
+  S.cases.filter(cs=>cs.wait).forEach(cs=>{cs.wait=false;queue(caseModal(cs));});
+  for(const c of S.companies.slice()){
+    c.yearsOwned++;
+    c.ebitda*=1+c.growth+rf(-0.03,0.03)*(c.growth<0?1.6:1);
+    if(c.growth>0.1)c.growth-=0.008;c.growth+=rf(-0.008,0.008);
+    const rate=Math.max(0.02,S.rate+c.rateAdj+FOUNDERS[S.founder].rate)*(S.laws.interest?0.7:1);
+    const fcf=c.ebitda*0.65-c.debt*rate;
+    if(fcf>=0){const pay=Math.min(c.debt,fcf);c.debt-=pay;if(fcf>pay)f.dist+=fcf-pay;}else c.debt-=fcf;
+    c.assetValue*=1.02;
+    if(has(c,'maintenance')&&c.yearsOwned===1){c.debt+=c.ebitda;dropTrait(c,'maintenance');log(`Deferred Maintenance at ${c.name}: ${fm(c.ebitda)} of emergency repairs added to its debt.`,'bad');}
+    if(has(c,'lawsuit')&&c.yearsOwned===2){const a=1.5*c.ebitda;c.debt+=a;dropTrait(c,'lawsuit');log(`Pending Lawsuit at ${c.name}: ${fm(a)} settlement added to its debt.`,'bad');}
+    if(has(c,'keyperson')&&chance(0.12)){c.ebitda*=0.85;dropTrait(c,'keyperson');log(`Key-Person Risk at ${c.name}: the founder quit. EBITDA −15%.`,'bad');}
+    if(has(c,'concentration')&&chance(0.18)){c.ebitda*=0.75;dropTrait(c,'concentration');log(`Customer Concentration at ${c.name}: the biggest customer left. EBITDA −25%.`,'bad');}
+    if(has(c,'patent')&&chance(0.25)){const a=0.6*c.ebitda;f.dist+=a;dropTrait(c,'patent');log(`Unused Patent at ${c.name} licensed for ${fm(a)}.`,'good');}
+    c.strategic=chance(0.3);
+  }
+  const fee=0.02*f.size,fromCash=Math.min(f.cash,fee);f.cash-=fromCash;f.dist-=fee-fromCash;f.fees+=fee;S.personal+=fee;
+  if(hasConn('dog'))rep(1);
+  if(hasConn('cayman'))heat(3);
+  const life=hasConn('shredder')?3:5;
+  for(const e of S.evidence.slice()){
+    e.age++;
+    if(e.age>=life){S.evidence=S.evidence.filter(x=>x!==e);log(`The ${e.crime} trail went cold.`,'good');}
+    else if(chance(0.04+S.heat/250)){S.evidence=S.evidence.filter(x=>x!==e);openCase(e.crime,1);}
+  }
+  heat(-8);
+  S.officials.filter(o=>o.demand).forEach(of=>{const bc=bribeCost();queue({title:`${of.name} Wants Another Envelope`,body:`The ${of.role.toLowerCase()} you paid off wants ${fm(2*bc)} more. Or they start talking.`,choices:[
+    {label:'Pay up',sub:`${fm(2*bc)} personal · Illegal · evidence +1`,cls:'illegal',disabled:()=>S.personal<2*bc,fn:()=>{S.personal-=2*bc;addEvidence('bribery');of.demand=chance(0.5);}},
+    {label:'Refuse',sub:'They go to the regulators',fn:()=>{of.demand=false;openCase('bribery',2);}}]});});
+  S.rate=clamp(S.rate+rf(-0.005,0.006),0.02,0.15);S.mkt=clamp(S.mkt+rf(-0.05,0.05),0.6,1.4);
+  if(S.year%2===0)rotateHype();
+  if(S.fund.n>=2)for(const k in S.bills)if(!S.laws[k]&&S.bills[k]>0)S.bills[k]=Math.max(0,S.bills[k]-ri(0,2));
+  S.companies.filter(c=>c.debt/c.ebitda>7).forEach(c=>queue(breachModal(c)));
+  S.exitBoost=0;
+  pending=()=>{
+    if(S.phase==='over')return;
+    if(S.rep<=0){gameOver('Blacklisted','Your reputation hit zero. No investor will return your calls.');return;}
+    if(S.year>=7){S.phase='close';S.closeSel={};S.companies.forEach(c=>S.closeSel[c.id]='sell');}
+    else{S.year++;S.mckUsed=false;S.phase='map';}
+  };
+}
+function finalizeClose(){
+  const f=S.fund,last=f.n===3,cont=[];
+  for(const c of S.companies){
+    if(!last&&S.closeSel[c.id]==='cont'){f.dist+=equity(c);cont.push(c);rep(-3);heat(4);news(`${S.firm} moves ${c.name} into a continuation fund, at its own valuation.`);}
+    else{const p=equity(c)*(last?0.9:0.85);f.dist+=p;f.exits.push({name:c.name,moic:c.cost>0?p/c.cost:0,net:p});news(`${c.name} sold in ${S.firm}’s end-of-fund fire sale.`);}
+  }
+  S.companies=[];
+  const total=f.cash+f.dist,moic=total/f.size;
+  let carry=0;if(moic>=1.3)carry=0.2*(total-f.size)*(S.laws.loophole?1.5:1)*(hasConn('cayman')?1.25:1);
+  S.personal+=carry;
+  S.funds.push({n:f.n,size:f.size,moic,carry,fees:f.fees});
+  if(last){gameOver('Retired',`You closed ${FUNDNAMES[2]} at ${moic.toFixed(2)}× and retired to a ranch in Montana.`);return;}
+  const target=[1.35,1.55][f.n-1]*(hasConn('whisper')?0.85:1);
+  const parts=[['Fund MOIC',moic],['Reputation',(S.rep-50)/200],['Heat',-S.heat/400],['Open cases',-0.08*S.cases.length],['Investor dinners',S.lpBonus],['Marked-up valuations',S.markup]];
+  const score=parts.reduce((s,p)=>s+p[1],0);
+  let outcome,size;
+  if(score>=target){outcome='success';size=f.size*6*Math.pow(Math.min(2,score/target),1.5);}
+  else if(score>=0.8*target){outcome='weak';size=f.size*3;}
+  else{outcome='fail';size=0;}
+  const repealed=[];
+  if(f.n>=2)for(const k in S.laws)if(chance(0.25)){delete S.laws[k];S.bills[k]=0;repealed.push(LAWS[k].n);}
+  S.raise={moic,carry,parts,score,target,outcome,size,cont,repealed};S.phase='raise';
+}
+function gameOver(kind,text){
+  S.phase='over';S.outcome={kind,text};Q=[];pending=null;
+  try{const h=JSON.parse(localStorage.getItem(HALL_KEY)||'[]');h.push({firm:S.firm,founder:FOUNDERS[S.founder].n,fortune:S.personal,kind,funds:S.funds.length,date:new Date().toISOString().slice(0,10),v:VERSION});h.sort((a,b)=>b.fortune-a.fortune);localStorage.setItem(HALL_KEY,JSON.stringify(h.slice(0,20)));}catch(e){}
+  try{localStorage.removeItem(SAVE_KEY);}catch(e){}
+}
+
+/* ---------- actions ---------- */
+const A={
+  pickFounder:x=>{titleFounder=x;},
+  start:()=>{const el=document.getElementById('firmname');const n=(el&&el.value.trim())||'Granite Ridge Capital';startRun(n.slice(0,40),titleFounder);},
+  continue:()=>{try{S=JSON.parse(localStorage.getItem(SAVE_KEY));}catch(e){S=null;}},
+  quit:()=>{S=null;Q=[];pending=null;},
+  go:x=>{if(S.year===7){S.pos=S.pos??1;enterNode('boss');return;}const l=+x;if(!reachable(l))return;S.pos=l;S.path.push(l);enterNode(S.map[S.year-1][l]);},
+  dd:x=>{const o=S.node.offers[+x],cost=ddCost(o);if(o.dd>=o.ddMax||S.fund.cash<cost)return;S.fund.cash-=cost;o.dd++;o.c.assetKnown=true;
+    const hidden=shuffle(o.c.traits.filter(t=>!t.rev)).slice(0,hasConn('barbarians')?2:1);
+    if(!hidden.length)log(`Diligence on ${o.c.name} found nothing new.`);
+    hidden.forEach(t=>{t.rev=true;log(`Diligence on ${o.c.name}: ${TRAITS[t.k].n}.`,TRAITS[t.k].bad?'bad':'good');
+      if(t.k==='cooked'){o.c.ebitda*=0.75;recalcOffer(o);log(`${o.c.name} restated its EBITDA. New price ${fm(o.price)}.`);}
+      if(t.k==='founder'){o.disc=true;recalcOffer(o);log(`The founder of ${o.c.name} cut the price to ${fm(o.price)}.`);}});},
+  buy:x=>{const o=S.node.offers[+x];if(!canFinance(o.c,o.price))return;S.buy={oi:+x,price:o.price,auction:false};S.phase='buy';},
+  bid:()=>{const a=S.auc,o=S.node.offers[a.oi];const bid=a.leader?a.price+a.step:a.price;if(!canFinance(o.c,bid))return;
+    a.price=bid;a.leader='You';a.msgs.unshift(`You bid ${fm(bid)}.`);
+    const nxt=bid+a.step;o.rivals.forEach(r=>{if(r.in&&r.limit<nxt){r.in=false;a.msgs.unshift(`${r.name} drops out.`);}});
+    const live=o.rivals.filter(r=>r.in).sort((p,q)=>q.limit-p.limit);
+    if(!live.length){a.msgs.unshift('Nobody else bids. You win.');S.buy={oi:a.oi,price:bid,auction:true};S.auc=null;S.phase='buy';return;}
+    a.price=nxt;a.leader=live[0].name;a.msgs.unshift(`${live[0].name} bids ${fm(nxt)}.`);},
+  startAuction:x=>{const o=S.node.offers[+x];S.auc={oi:+x,price:o.price,leader:null,step:value(o.c)*0.05,msgs:[]};if(o.note)S.auc.msgs.push(o.note);},
+  walk:()=>{const a=S.auc,o=S.node.offers[a.oi];o.done=true;log(`${a.leader||'A rival'} won ${o.c.name} at ${fm(a.price)}.`);S.auc=null;},
+  confirmBuy:()=>{const b=S.buy,o=S.node.offers[b.oi],c=o.c;const el=document.getElementById('lev');const debt=clamp(+(el?el.value:0),Math.max(0,b.price-S.fund.cash),maxDebt(c,b.price));
+    S.fund.cash-=b.price-debt;c.debt=debt;c.cost=b.price-debt;c.owned=true;c.yearsOwned=0;o.done=true;
+    const sur=[];
+    c.traits.forEach(t=>{if(t.rev)return;if(t.k==='cooked'){c.ebitda*=0.75;t.rev=true;sur.push('<b>Cooked Books</b>: real EBITDA is 25% lower than reported. Your leverage just jumped.');}
+      if(t.k==='founder'){t.rev=true;sur.push('<b>Motivated Seller</b>: the founder would have taken 12% less. Oh well.');}});
+    if(has(c,'loyal'))c.growth+=0.02;
+    if(hasConn('guru')&&c.growth<0)c.growth+=0.04;
+    S.companies.push(c);S.buy=null;S.phase='node';
+    log(`Bought ${c.name} for ${fm(b.price)} (${fm(debt)} debt, ${fm(c.cost)} equity).`,'good');news(`${S.firm} acquires ${c.name} for ${fm(b.price)}.`);
+    if(sur.length)queue(info('Post-Closing Surprise',sur.join('<br>')));
+    queue(cardRewardModal('Your associates learned something on that deal.'));
+    if(b.auction)queue(connRewardModal());},
+  cancelBuy:()=>{if(S.buy.auction){rep(-5);S.node.offers[S.buy.oi].done=true;log('You walked away from a signed deal. Reputation −5.','bad');}S.buy=null;S.phase='node';},
+  leave:()=>{startOps();},
+  retreat:x=>{if(x==='rep')rep(10);else if(x==='heat')heat(-25);else S.lpBonus+=0.08;startOps();},
+  shopCard:x=>{const sh=S.node.shop,k=sh.cards[+x],p=cardPrice(k);if(sh.sold.includes('c'+x)||!needPersonal(p))return;addCard(k);sh.sold.push('c'+x);log(`Bought ${CARDS[k].n}.`);},
+  shopConn:x=>{const sh=S.node.shop,k=sh.conns[+x],p=connPrice();if(sh.sold.includes('n'+x)||!needPersonal(p))return;S.conns.push(k);sh.sold.push('n'+x);log(`New connection: ${CONNS[k].n}.`,'good');},
+  shopRemove:()=>{const p=0.6*sc()*(hasConn('club')?0.8:1);if(S.personal<p||S.cards.length<=4)return;const uniq=[...new Set(S.cards)];
+    queue({title:'Fire a Junior Associate',body:`Remove one card from your playbook for ${fm(p)}.`,choices:uniq.map(k=>({label:CARDS[k].n,sub:CARDS[k].d,fn:()=>{S.personal-=p;removeCard(k);log(`Removed ${CARDS[k].n} from your playbook.`);}})).concat([{label:'Never mind'}])});},
+  donate:()=>{const p=1.5*sc()*(hasConn('club')?0.8:1);if(!needPersonal(p))return;S.influence+=3;rep(-1);S.node.shop.sold.push('don');log('Campaign donation made. Influence +3.');},
+  selcard:x=>{const hi=+x,k=S.hand[hi];if(cardCost(k)>S.bw){log('Not enough bandwidth this year.','bad');return;}
+    if(CARDS[k].t==='none'){sel=null;playCard(hi,null);}else sel=sel===hi?null:hi;},
+  apply:x=>{if(sel===null)return;const c=co(+x);if(c)playCard(sel,c);},
+  sell:x=>{const [id,kind]=x.split(':');const c=co(+id);if(!c)return;const gross=kind==='pe'?salePE(c):kind==='strat'?saleStrat(c):saleBreak(c);
+    if(gross<c.debt){log(`Selling ${c.name} that way would not cover its debt.`,'bad');return;}c.assetKnown=true;realize(c,gross-c.debt,kind);},
+  keys:x=>{const c=co(+x);if(c)handKeys(c);},
+  merge:x=>{const a=co(+x);const others=S.companies.filter(c=>c!==a&&c.sector===a.sector);
+    queue({title:`Merge Into ${a.name}`,body:'Fold another company in this sector into it. Combined EBITDA earns a bigger size premium, and 2+ merged companies get a platform premium.',
+      choices:others.map(b=>({label:b.name,sub:`EBITDA ${fm(b.ebitda)} · debt ${fm(b.debt)}`,fn:()=>mergeCos(a,b)})).concat([{label:'Cancel'}])});},
+  bill:x=>{if(S.influence<1||S.laws[x])return;S.influence--;S.bills[x]++;if(S.bills[x]>=8){S.laws[x]=true;log(`${LAWS[x].n} signed into law.`,'good');news(`Congress passes the ${LAWS[x].n}. ${S.firm} lobbyists celebrate.`);}},
+  endYear:()=>{endYear();},
+  closeSel:x=>{const [id,v]=x.split(':');S.closeSel[id]=v;},
+  finalize:()=>{finalizeClose();},
+  nextFund:()=>{const r=S.raise;if(r.outcome==='fail'){gameOver('Fundraise Failed',`Investors passed on ${FUNDNAMES[S.fund.n]}. ${S.firm} winds down.`);return;}
+    r.repealed.forEach(n=>log(`Election: the ${n} was repealed.`,'bad'));startFund(S.fund.n+1,r.size,r.cont);S.raise=null;},
+  modal:x=>{const m=Q.shift();const ch=m&&m.choices[+x];if(ch&&ch.fn)ch.fn();},
+  newRun:()=>{S=null;}
+};
+function playCard(hi,c){
+  const k=S.hand[hi],C=CARDS[k],cost=cardCost(k);if(cost>S.bw)return;
+  if(C.p(c)===false)return;
+  if(k==='cut'&&hasConn('mckinsey'))S.mckUsed=true;
+  S.bw-=cost;S.hand.splice(hi,1);S.discard.push(k);sel=null;
+}
+function mergeCos(a,b){
+  if(!co(a.id)||!co(b.id))return;
+  const tot=a.ebitda+b.ebitda;a.growth=(a.growth*a.ebitda+b.growth*b.ebitda)/tot;a.ebitda=tot;a.debt+=b.debt;a.cost+=b.cost;
+  a.platform+=1+b.platform;a.traits=a.traits.concat(b.traits);a.assetValue+=b.assetValue;a.assetKnown=a.assetKnown&&b.assetKnown;
+  a.multBonus=Math.max(a.multBonus,b.multBonus);a.inflated=Math.max(a.inflated,b.inflated);a.rateAdj=Math.min(a.rateAdj,b.rateAdj);
+  if(!/Holdings$/.test(a.name))a.name=`${a.name.split(' ')[0]} ${a.sector} Holdings`;
+  S.companies=S.companies.filter(x=>x!==b);log(`Merged ${b.name} into ${a.name}.`,'good');news(`${S.firm} combines ${b.name} into ${a.name}.`);
+}
+const cardPrice=k=>({common:0.8,uncommon:1.2,rare:1.8}[CARDS[k].r])*sc()*(hasConn('club')?0.8:1);
+const connPrice=()=>3*sc()*(hasConn('club')?0.8:1);
+
+/* ---------- views ---------- */
+const stat=(k,v,cls)=>`<div class="stat"><span class="k">${k}</span><span class="v ${cls||''}">${v}</span></div>`;
+const btn=(label,a,x,opt)=>{opt=opt||{};return `<button class="btn ${opt.cls||''}" data-a="${a}" data-x="${esc(x??'')}" ${opt.dis?'disabled':''}>${label}${opt.sub?`<span class="sub">${opt.sub}</span>`:''}</button>`;};
+function statusHTML(){
+  const f=S.fund;
+  return `<div class="panel status"><div class="row" style="justify-content:space-between"><h2>${esc(S.firm)}</h2><span class="muted small">${FOUNDERS[S.founder].n} · ${FUNDNAMES[f.n-1]} · Year ${S.year} of 7 · ${calYear()}</span></div>
+  <div class="stats">
+    ${stat('Fund cash',fm(f.cash))}${stat('Returned',fm(f.dist))}${stat('Fund MOIC',fundMoic().toFixed(2)+'×',fundMoic()>=1.3?'good':fundMoic()<1?'bad':'')}
+    ${stat('Personal',fm(S.personal))}${stat('Reputation',S.rep,S.rep<25?'bad':'')}${stat('Heat',S.heat,S.heat>=40?'bad':'')}
+    ${stat('Influence',S.influence)}${stat('Rates',(S.rate*100).toFixed(1)+'%')}${stat('Market',S.mkt.toFixed(2)+'×')}
+  </div><div class="small muted">Hot sector: <b class="good">${S.hot}</b> · Cold: <b class="bad">${S.cold}</b>${S.exitBoost?' · <b class="good">Exit window open: sales +25%</b>':''}</div></div>`;
+}
+function traitsHTML(c){
+  const r=c.traits.filter(t=>t.rev);
+  if(!r.length)return '<p class="small muted">No traits uncovered.</p>';
+  return `<ul class="traits">${r.map(t=>`<li><b class="${TRAITS[t.k].bad?'bad':'good'}">${TRAITS[t.k].n}</b>: <span class="muted">${TRAITS[t.k].d}</span></li>`).join('')}</ul>`;
+}
+function coStats(c){
+  const lev=c.ebitda>0?c.debt/c.ebitda:0;
+  return `<div class="stats">${stat('EBITDA',fm(c.ebitda))}${stat('Growth',pct(c.growth),c.growth<0?'bad':c.growth>=0.08?'good':'')}${stat('Multiple',mult(c).toFixed(1)+'×')}
+    ${stat('Value',fm(value(c)))}${c.owned?stat('Debt',`${fm(c.debt)} · ${lev.toFixed(1)}×`,lev>6?'bad':lev>5?'warn':''):''}${c.owned?stat('Equity',fm(equity(c))):''}
+    ${stat('Breakup',c.assetKnown?fm(c.assetValue):'?')}${c.owned?stat('On cost',c.cost>0?(equity(c)/c.cost).toFixed(2)+'×':'–'):''}</div>`;
+}
+function coHead(c){return `<div class="co-head"><h3>${esc(c.name)}</h3><span class="row" style="gap:4px"><span class="pill">${c.sector}</span><span class="pill ${health(c)}">${health(c)}</span>${c.platform?`<span class="pill">Platform ${c.platform}</span>`:''}${c.inflated?'<span class="pill bad">Inflated</span>':''}</span></div>`;}
+function mapHTML(){
+  let h='<div class="map">';
+  h+=`<span class="yr">Year 7</span><button class="btn node boss ${S.year===7?'primary':''}" data-a="go" data-x="boss" ${S.year===7?'':'disabled'}>Boss: ${BOSS[S.fund.n-1].n}<span class="sub">${BOSS[S.fund.n-1].d}</span></button>`;
+  for(let y=6;y>=1;y--){
+    h+=`<span class="yr">Year ${y}</span>`;
+    for(let l=0;l<3;l++){const t=S.map[y-1][l];const past=y<S.year,cur=y===S.year,chosen=past&&S.path[y-1]===l;
+      const can=cur&&reachable(l);
+      h+=`<button class="btn node ${chosen?'here':''}" data-a="go" data-x="${l}" ${can?'':'disabled'} title="${esc(NODE_DESC[t])}">${NODE_LABEL[t]}</button>`;}
+  }
+  h+='</div>';
+  const cur=S.year<7?S.map[S.year-1].map((t,l)=>reachable(l)?`<li><b>${NODE_LABEL[t]}</b>: ${NODE_DESC[t]}</li>`:'').join(''):'';
+  return `<div class="panel"><h2>${FUNDNAMES[S.fund.n-1]} map · choose where to spend Year ${S.year}</h2>${h}${cur?`<ul class="small muted" style="margin:0;padding-left:18px">${[...new Set(cur.split('</li>'))].join('</li>')}</ul>`:''}</div>`+portfolioHTML(false);
+}
+function offerHTML(o,i){
+  const c=o.c,auc=o.kind==='auction';
+  const full=c.traits.every(t=>t.rev);
+  let actions='';
+  if(o.done)actions='<p class="muted small">Closed.</p>';
+  else{
+    const dc=ddCost(o);
+    actions=btn(full?'Diligence complete':`Diligence (${fm(dc)})`,'dd',i,{dis:full||o.dd>=o.ddMax||S.fund.cash<dc,sub:auc?`Time pressure: ${o.ddMax-o.dd} round left`:'Reveals a hidden trait'});
+    const fin=canFinance(c,o.price);
+    if(auc)actions+=btn(`Start bidding at ${fm(o.price)}`,'startAuction',i,{cls:'primary',dis:!!S.auc||!fin,sub:fin?`vs ${o.rivals.filter(r=>r.in).length} rivals`:'You can’t finance this'});
+    else actions+=btn(`Buy for ${fm(o.price)}`,'buy',i,{cls:'primary',dis:!fin,sub:fin?`Max debt ${fm(maxDebt(c,o.price))}`:`Need ${fm(o.price-maxDebt(c,o.price))} equity`});
+  }
+  return `<div class="co">${coHead(c)}${coStats(c)}${traitsHTML(c)}<p class="small muted">${full?'Fully diligenced.':`${c.traits.filter(t=>t.rev).length} trait(s) found. More may be hidden.`}</p><div class="row">${actions}</div></div>`;
+}
+function auctionHTML(){
+  const a=S.auc,o=S.node.offers[a.oi];const bid=a.leader&&a.leader!=='You'?a.price+a.step:a.price;
+  const top=o.rivals.filter(r=>r.in).sort((p,q)=>q.limit-p.limit)[0];
+  const hint=hasConn('insider')&&top?`<p class="small good">Auction Insider: ${top.name} walks away around ${fm(top.limit*rf(0.95,1.05))}.</p>`:'';
+  return `<div class="panel"><h2>Auction: ${esc(o.c.name)}</h2><p>Current price <b>${fm(a.price)}</b> · Leader: <b>${a.leader||'none yet'}</b></p>
+   <p class="small muted">Still in: ${o.rivals.filter(r=>r.in).map(r=>r.name).join(', ')||'nobody'}</p>${hint}
+   <div class="row">${a.leader==='You'?'':btn(`Bid ${fm(bid)}`,'bid','',{cls:'primary',dis:!canFinance(o.c,bid),sub:canFinance(o.c,bid)?'':'You can’t finance this'})}${btn('Walk away','walk')}</div>
+   <div class="log">${a.msgs.map(m=>`<div>${esc(m)}</div>`).join('')}</div></div>`;
+}
+function nodeHTML(){
+  const n=S.node,t=n.type;let body='';
+  if(t==='deal'||t==='distressed'||t==='auction'){
+    body=(S.auc?auctionHTML():'')+`<div class="grid2">${n.offers.map(offerHTML).join('')}</div>`;
+    if(t==='distressed')body=`<p class="small muted">Shrinking businesses at a discount. Breakup value is often higher than the price, if you’re willing to sell for parts.</p>`+body;
+  } else if(t==='conference'){
+    const sh=n.shop;
+    body=`<p class="small muted">Paid from personal money (${fm(S.personal)}).</p><h3>Playbook cards</h3><div class="hand">${sh.cards.map((k,i)=>cardHTML(k,'shopCard',i,{price:cardPrice(k),sold:sh.sold.includes('c'+i)})).join('')}</div>
+      <h3>Connections</h3><div class="row">${sh.conns.map((k,i)=>btn(`${CONNS[k].n} · ${fm(connPrice())}`,'shopConn',i,{sub:CONNS[k].d,dis:sh.sold.includes('n'+i)||S.personal<connPrice()})).join('')||'<span class="muted">Nobody new here.</span>'}</div>
+      <h3>Other</h3><div class="row">${btn(`Fire a junior associate · ${fm(0.6*sc()*(hasConn('club')?0.8:1))}`,'shopRemove','',{sub:'Remove a card from your playbook',dis:S.personal<0.6*sc()*(hasConn('club')?0.8:1)||S.cards.length<=4})}
+      ${S.fund.n>=2?btn(`Campaign donation · ${fm(1.5*sc()*(hasConn('club')?0.8:1))}`,'donate','',{cls:'gray',sub:'Influence +3, reputation −1',dis:sh.sold.includes('don')||S.personal<1.5*sc()*(hasConn('club')?0.8:1)}):''}</div>`;
+  } else if(t==='retreat'){
+    body=`<p>Eighteen holes and a long lunch. Pick one.</p><div class="row">${btn('Charity foursome','retreat','rep',{sub:'Reputation +10'})}${btn('Lay low','retreat','heat',{sub:'Heat −25'})}${btn('Golf with investors','retreat','lp',{sub:'Fundraise score +0.08'})}</div>`;
+  } else if(t==='exit'){
+    body='<p>Strategic buyers are flush with cash. Every sale this year pays 25% more, and every company you own has a strategic buyer.</p>';
+  } else body='<p class="muted">Resolving…</p>';
+  const leave=t==='retreat'?'':`<div class="row">${btn('Go to operations →','leave','',{cls:'primary',dis:!!S.auc})}</div>`;
+  return `<div class="panel"><h2>Year ${S.year}: ${t==='boss'?BOSS[S.fund.n-1].n:NODE_LABEL[t]}</h2>${body}${t==='event'||t==='boss'?'':leave}</div>`+portfolioHTML(false);
+}
+function buyHTML(){
+  const b=S.buy,o=S.node.offers[b.oi],c=o.c;const mx=maxDebt(c,b.price),mn=Math.max(0,b.price-S.fund.cash);const def=Math.max(mn,mx*0.75);
+  return `<div class="panel"><h2>Finance ${esc(c.name)}</h2><p>Price <b>${fm(b.price)}</b>. Lenders will lend up to <b>${fm(mx)}</b> (${levCap()}× EBITDA, at most 80% of price). Fund cash ${fm(S.fund.cash)}.</p>
+   <label for="lev" class="small muted">Debt</label><input type="range" id="lev" min="${mn}" max="${mx}" step="${Math.max(0.01,(mx-mn)/100)}" value="${def}">
+   <div id="levtxt" class="small"></div>
+   <div class="row">${btn('Sign the deal','confirmBuy','',{cls:'primary'})}${btn(b.auction?'Back out (reputation −5)':'Cancel','cancelBuy')}</div></div>`;
+}
+function levText(){
+  const el=document.getElementById('lev'),out=document.getElementById('levtxt');if(!el||!out||!S||!S.buy)return;
+  const c=S.node.offers[S.buy.oi].c,d=+el.value,eq=S.buy.price-d,rate=S.rate+FOUNDERS[S.founder].rate;const fcf=c.ebitda*0.65-d*rate;
+  out.innerHTML=`Debt <b>${fm(d)}</b> (${(d/c.ebitda).toFixed(1)}× EBITDA) · Equity from fund <b>${fm(eq)}</b> · Year-1 interest ${fm(d*rate)} · Cash left to repay debt ${fm(fcf)} <span class="${fcf<0?'bad':'muted'}">${fcf<0?'(debt will grow)':''}</span>`;
+}
+function cardHTML(k,a,x,o){
+  o=o||{};const C=CARDS[k];const cost=o.price!==undefined?fm(o.price):cardCost(k);
+  const dis=o.sold||(o.price!==undefined?S.personal<o.price:cardCost(k)>S.bw);
+  return `<button class="btn cardb ${C.tier} ${o.selected?'selected':''}" data-a="${a}" data-x="${x}" ${dis?'disabled':''}>
+    <span class="top"><b>${C.n}</b><span class="cost">${o.sold?'Sold':cost}</span></span><span class="tag ${C.tier}">${C.tier==='legal'?(C.t==='co'?'target a company':'instant'):C.tier}</span><span class="desc">${C.d}</span></button>`;
+}
+function portfolioHTML(ops){
+  if(!S.companies.length)return `<div class="panel"><h2>Portfolio</h2><p class="muted">You don’t own any companies yet.</p></div>`;
+  const selC=ops&&sel!==null?CARDS[S.hand[sel]]:null;
+  return `<div class="panel"><h2>Portfolio · ${S.companies.length} ${S.companies.length===1?'company':'companies'} · equity ${fm(nav())}</h2><div class="grid2">${S.companies.map(c=>{
+    let act='';
+    if(ops){
+      if(selC)act=btn(`Apply ${selC.n}`,'apply',c.id,{cls:'primary'});
+      else{
+        const pe=salePE(c),st=saleStrat(c),br=saleBreak(c);const canSt=c.strategic||S.exitBoost>0;
+        act=btn(`Sell to PE · ${fm(pe-c.debt)}`,'sell',`${c.id}:pe`,{dis:pe<c.debt});
+        if(canSt)act+=btn(`Strategic sale · ${fm(st-c.debt)}`,'sell',`${c.id}:strat`,{cls:'primary',dis:st<c.debt});
+        act+=btn(`Break up · ${c.assetKnown?fm(br-c.debt):'value unknown'}`,'sell',`${c.id}:break`,{cls:'gray',sub:'Sell for parts. Reputation −2 to −5'});
+        if(S.companies.some(o=>o!==c&&o.sector===c.sector))act+=btn('Merge…','merge',c.id);
+        if(value(c)<c.debt)act+=btn('Hand keys to lenders','keys',c.id,{sub:'Reputation −5'});
+      }
+    }
+    return `<div class="co ${selC?'target':''}">${coHead(c)}${coStats(c)}${traitsHTML(c)}${c.strategic&&ops?'<p class="small good">A strategic buyer is interested this year.</p>':''}${act?`<div class="row">${act}</div>`:''}</div>`;}).join('')}</div></div>`;
+}
+function opsHTML(){
+  const hand=S.hand.length?S.hand.map((k,i)=>cardHTML(k,'selcard',i,{selected:sel===i})).join(''):'<p class="muted">No cards left this year.</p>';
+  const last=S.year===7;
+  let h=`<div class="panel"><div class="row" style="justify-content:space-between"><h2>Year ${S.year} operations</h2><span><b>${S.bw}</b> bandwidth left</span></div>
+    <p class="small muted">${sel!==null?`Choose a company below for <b>${CARDS[S.hand[sel]].n}</b>, or tap the card again to cancel.`:'Play cards from your playbook, sell or merge companies, then end the year. Unplayed cards go to the discard pile.'}</p>
+    <div class="hand">${hand}</div>
+    <div class="row">${btn(last?'End year and close the fund':'End year','endYear','',{cls:'primary',sub:last?'Unsold companies go to a fire sale or a continuation fund':`Fees ${fm(0.02*S.fund.size)} · heat cools · companies grow`})}</div></div>`;
+  h+=portfolioHTML(true);
+  h+=trailHTML();
+  if(S.fund.n>=2)h+=lobbyHTML();
+  h+=connsHTML();
+  return h;
+}
+function trailHTML(){
+  const life=hasConn('shredder')?3:5;
+  return `<div class="panel"><h2>Heat & paper trail</h2><div class="bar heat"><i style="width:${S.heat}%"></i></div>
+   <p class="small muted">Each year every piece of evidence has a ${Math.round((0.04+S.heat/250)*100)}% chance of surfacing at your current heat. Evidence goes cold after ${life} years. Heat cools by 8 a year.</p>
+   ${S.evidence.length?`<ul class="small" style="margin:0;padding-left:18px">${S.evidence.map(e=>`<li>${esc(e.crime)} · ${life-e.age} yr${life-e.age===1?'':'s'} left</li>`).join('')}</ul>`:'<p class="small">Clean, for now.</p>'}
+   ${S.cases.length?`<p class="small bad">Open cases: ${S.cases.map(c=>esc(c.crime)).join(', ')}</p>`:''}</div>`;
+}
+function lobbyHTML(){
+  return `<div class="panel"><h2>Capitol Hill · ${S.influence} influence</h2><p class="small muted">Spend influence to push a bill. A bill needs 8 points. Opponents knock 0–2 points off unfinished bills every year. Elections at each fund close can repeal laws (25% each).</p>
+   ${Object.keys(LAWS).map(k=>{const p=S.bills[k],stage=S.laws[k]?'Signed':p>=6?'Floor vote':p>=3?'Committee':'Drafted';
+     return `<div class="row" style="justify-content:space-between"><div style="min-width:0;flex:1"><b>${LAWS[k].n}</b> <span class="small muted">· ${stage} ${S.laws[k]?'':`${p}/8`}</span><div class="small muted">${LAWS[k].d}</div><div class="bar"><i style="width:${Math.min(100,p/8*100)}%"></i></div></div>${S.laws[k]?'<span class="good small">In force</span>':btn('Push +1','bill',k,{dis:S.influence<1})}</div>`;}).join('')}</div>`;
+}
+function connsHTML(){
+  const deck=[...new Set(S.cards)].map(k=>`${CARDS[k].n}${S.cards.filter(x=>x===k).length>1?' ×'+S.cards.filter(x=>x===k).length:''}`).join(', ');
+  return `<div class="panel"><h2>Connections & playbook</h2><ul class="small" style="margin:0;padding-left:18px">${S.conns.map(k=>`<li><b>${CONNS[k].n}</b>: ${CONNS[k].d}</li>`).join('')}</ul>
+   <p class="small muted">Playbook (${S.cards.length} cards, ${S.deck.length} in draw pile): ${deck}</p></div>`;
+}
+function closeHTML(){
+  const last=S.fund.n===3;
+  return `<div class="panel"><h2>Closing ${FUNDNAMES[S.fund.n-1]}</h2><p class="small muted">${last?'This is your final fund. Everything left is liquidated at 90% of equity value.':'Unsold companies go to a fire sale at 85% of equity value, or you can move them into a continuation fund: your next fund buys them at your own valuation. The old fund books full value. Investors notice (reputation −3, heat +4 each).'}</p>
+   ${S.companies.length?S.companies.map(c=>`<div class="co">${coHead(c)}<div class="row">${btn(`Fire sale · ${fm(equity(c)*(last?0.9:0.85))}`,'closeSel',`${c.id}:sell`,{cls:S.closeSel[c.id]==='sell'?'primary':''})}${last?'':btn(`Continuation fund · ${fm(equity(c))}`,'closeSel',`${c.id}:cont`,{cls:S.closeSel[c.id]==='cont'?'primary gray':'gray'})}</div></div>`).join(''):'<p>All companies sold. Clean close.</p>'}
+   <div class="row">${btn('Close the fund','finalize','',{cls:'primary'})}</div></div>`;
+}
+function raiseHTML(){
+  const r=S.raise,f=S.fund;
+  const rows=r.parts.map(p=>`<tr><td>${p[0]}</td><td class="n">${p[1]>=0?'+':''}${p[1].toFixed(2)}</td></tr>`).join('');
+  const verdict=r.outcome==='success'?`<p class="good"><b>Oversubscribed.</b> ${FUNDNAMES[f.n]} closes at ${fm(r.size)}.</p>`:r.outcome==='weak'?`<p class="warn"><b>A tough raise.</b> Investors commit only ${fm(r.size)} to ${FUNDNAMES[f.n]}.</p>`:`<p class="bad"><b>Investors pass.</b> There will be no ${FUNDNAMES[f.n]}.</p>`;
+  return `<div class="panel"><h2>${FUNDNAMES[f.n-1]} final results</h2><div class="stats">${stat('Fund MOIC',r.moic.toFixed(2)+'×')}${stat('Your carry',fm(r.carry),r.carry>0?'good':'')}${stat('Fees earned',fm(f.fees))}</div>
+   <p class="small muted">Carry is 20% of profits, paid only if the fund returns at least 1.30×.</p>
+   <h3>Fundraise for ${FUNDNAMES[f.n]}</h3><div class="tablewrap"><table>${rows}<tr><th>Score</th><th class="n">${r.score.toFixed(2)}</th></tr><tr><td>Target</td><td class="n">${r.target.toFixed(2)}</td></tr></table></div>
+   ${verdict}${r.repealed.length?`<p class="bad small">Election results: ${r.repealed.join(', ')} repealed.</p>`:''}
+   <div class="row">${btn(r.outcome==='fail'?'See how it ended':`Launch ${FUNDNAMES[f.n]}`,'nextFund','',{cls:'primary'})}</div></div>`;
+}
+function overHTML(){
+  const o=S.outcome;
+  return `<div class="panel"><h1>${esc(o.kind)}</h1><p>${esc(o.text)}</p><div class="stats">${stat('Personal fortune',fm(S.personal),'good')}${stat('Funds raised',S.funds.length)}${stat('Reputation',S.rep)}</div>
+   ${S.funds.length?`<div class="tablewrap"><table><tr><th>Fund</th><th>Size</th><th>MOIC</th><th>Carry</th></tr>${S.funds.map(f=>`<tr><td>${FUNDNAMES[f.n-1]}</td><td class="n">${fm(f.size)}</td><td class="n">${f.moic.toFixed(2)}×</td><td class="n">${fm(f.carry)}</td></tr>`).join('')}</table></div>`:''}
+   <div class="paper"><h2>The Ledger</h2><ul style="margin:0;padding-left:18px">${S.news.slice(0,10).map(n=>`<li>${esc(n)}</li>`).join('')||'<li>Nobody wrote about you. That might be a good thing.</li>'}</ul></div>
+   <div class="row">${btn('New run','newRun','',{cls:'primary'})}</div></div>`;
+}
+function titleHTML(){
+  let saved=null,hall=[];
+  try{saved=localStorage.getItem(SAVE_KEY);hall=JSON.parse(localStorage.getItem(HALL_KEY)||'[]');}catch(e){}
+  return `<div class="panel"><h1>PE Tycoon</h1><p>Raise a fund. Buy companies. Fix them, flip them, or strip them for parts. Three funds, seven years each. Retire rich, or go to prison trying.</p>
+   ${saved?`<div class="row">${btn('Continue saved run','continue','',{cls:'primary'})}</div>`:''}
+   <label for="firmname" class="small muted">Firm name</label><input type="text" id="firmname" maxlength="40" placeholder="Granite Ridge Capital">
+   <h3>Choose your founder</h3><div class="grid2">${Object.keys(FOUNDERS).map(k=>btn(FOUNDERS[k].n,'pickFounder',k,{cls:titleFounder===k?'primary':'',sub:FOUNDERS[k].d})).join('')}</div>
+   <div class="row">${btn('Start Fund I ($50M)','start','',{cls:'primary'})}</div>
+   <details><summary>How to play</summary><ul class="small" style="padding-left:18px">
+    <li>Each fund lasts 7 years. Every year, pick a node on the map: deals, auctions, distressed sales, conferences, retreats, events or exit windows. Year 7 is a boss.</li>
+    <li>Before buying, pay for diligence to reveal hidden traits. Lenders fund part of the price; the rest comes from fund cash.</li>
+    <li>In operations, spend bandwidth on playbook cards to grow EBITDA, then sell. Merge same-sector companies for a bigger multiple.</li>
+    <li>Fund MOIC is (cash + returned + equity value) ÷ fund size. Hit the fundraise target to raise a bigger next fund. Carry pays only above 1.30×.</li>
+    <li>Gray and illegal moves pay well but build heat and evidence. Evidence can surface for years.</li>
+    <li>Personal money comes from 2% yearly fees and carry. It pays for bribes, conferences and legal defense. Your final score is your personal fortune.</li></ul></details>
+   ${hall.length?`<h3>Hall of Firms</h3><div class="tablewrap"><table><tr><th>Firm</th><th>Founder</th><th>Ending</th><th>Fortune</th></tr>${hall.slice(0,10).map(h=>`<tr><td>${esc(h.firm)}</td><td>${esc(h.founder)}</td><td>${esc(h.kind)}</td><td class="n">${fm(h.fortune)}</td></tr>`).join('')}</table></div>`:''}
+  </div>`;
+}
+function logHTML(){
+  return `<div class="panel"><div class="row" style="justify-content:space-between"><h2>Deal log</h2>${btn('Quit to title','quit','',{sub:'Progress is saved'})}</div><div class="log">${S.log.slice(0,40).map(l=>`<div class="${l.cls}"><span class="y">${l.y}</span>${esc(l.msg)}</div>`).join('')}</div></div>`;
+}
+function renderModal(){
+  const el=document.getElementById('modal');const m=Q[0];
+  if(!m){el.hidden=true;el.innerHTML='';return;}
+  el.hidden=false;
+  el.innerHTML=`<div class="box" role="dialog" aria-modal="true"><h2>${esc(m.title)}</h2><div>${m.body}</div><div class="choices">${m.choices.map((c,i)=>{const d=typeof c.disabled==='function'?c.disabled():c.disabled;
+    return `<button class="btn ${c.cls||''}" data-a="modal" data-x="${i}" ${d?'disabled':''}>${esc(c.label)}${c.sub?`<span class="sub">${esc(c.sub)}</span>`:''}</button>`;}).join('')}</div></div>`;
+  const b=el.querySelector('button:not(:disabled)');if(b)b.focus({preventScroll:true});
+}
+function render(){
+  for(let guard=0;guard<10&&!Q.length&&pending;guard++){const p=pending;pending=null;p();}
+  if(S&&(sel!==null&&(S.phase!=='ops'||sel>=S.hand.length||CARDS[S.hand[sel]].t!=='co')))sel=null;
+  const app=document.getElementById('app');
+  if(!S){app.innerHTML=titleHTML()+`<footer>v${VERSION}</footer>`;renderModal();return;}
+  let main='';
+  switch(S.phase){
+    case 'map':main=mapHTML();break;
+    case 'node':main=nodeHTML();break;
+    case 'buy':main=buyHTML();break;
+    case 'ops':main=opsHTML();break;
+    case 'close':main=closeHTML();break;
+    case 'raise':main=raiseHTML();break;
+    case 'over':main=overHTML();break;
+  }
+  app.innerHTML=(S.phase==='over'?'':statusHTML())+main+(S.phase==='over'?'':logHTML())+`<footer>PE Tycoon v${VERSION}</footer>`;
+  levText();renderModal();
+  if(!Q.length&&!pending&&S.phase!=='over')save();
+}
+function save(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(S));}catch(e){}}
+
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-a]');if(!b||b.disabled)return;
+  const f=A[b.dataset.a];if(!f)return;
+  f(b.dataset.x);render();
+});
+document.addEventListener('input',e=>{if(e.target.id==='lev')levText();});
+
+function start(d){
+  if(d&&d.save){try{S=JSON.parse(d.save);}catch(e){S=null;}}
+  render();
+}
+window.claude?.hot?.snapshot?.(()=>({save:S&&!Q.length?JSON.stringify(S):null}));
+window.claude?.hot?.ready?window.claude.hot.ready(start):start(window.claude?.hot?.data??{});
+</script>
+</body>
+</html>
