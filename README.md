@@ -10,7 +10,9 @@ Every saved version is still playable:
 
 | Version | Play |
 |---|---|
-| v2.1.4 (latest) | [play/v2.1.4.html](https://newbieoo7.github.io/pe-tycoon/play/v2.1.4.html) |
+| v2.2.1 (latest) | [play/v2.2.1.html](https://newbieoo7.github.io/pe-tycoon/play/v2.2.1.html) |
+| v2.2.0 (Turkish added) | [play/v2.2.0.html](https://newbieoo7.github.io/pe-tycoon/play/v2.2.0.html) |
+| v2.1.4 (side version) | [play/v2.1.4.html](https://newbieoo7.github.io/pe-tycoon/play/v2.1.4.html) |
 | v2.1.3 | [play/v2.1.3.html](https://newbieoo7.github.io/pe-tycoon/play/v2.1.3.html) |
 | v2.1.2 | [play/v2.1.2.html](https://newbieoo7.github.io/pe-tycoon/play/v2.1.2.html) |
 | v2.1.1 | [play/v2.1.1.html](https://newbieoo7.github.io/pe-tycoon/play/v2.1.1.html) |

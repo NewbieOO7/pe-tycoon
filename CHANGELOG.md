@@ -3,7 +3,17 @@
 Each version is a frozen copy in `versions/pe-tycoon-vX.Y.html`. Open any of them in a browser to play that version.
 `pe-tycoon.html` in this folder is always the latest one (the one published online).
 
-## v2.1.4 — 2026-10-24
+## v2.2.1 — 2026-10-24
+- Built on v2.2.0. Fixed the firm name box on the title screen sticking out past its panel.
+- Hosted on GitHub Pages: https://newbieoo7.github.io/pe-tycoon/
+- Saves from v2.2.0 carry over.
+
+## v2.2.0 — 2026-10-24
+Made from the game page in the Claude app (not in a desktop session); copied here from the published artifact.
+- **Turkish language:** full Turkish translation, detected from the phone's language, with an English / Türkçe switch.
+
+## v2.1.4 — 2026-10-24 (side version)
+Built on v2.1.3 before v2.2.0 was known; its fix is carried into v2.2.1.
 - Fixed the firm name box on the title screen sticking out past its panel.
 - Now also hosted on GitHub Pages: https://newbieoo7.github.io/pe-tycoon/
 - Saves from v2.1.3 carry over.
