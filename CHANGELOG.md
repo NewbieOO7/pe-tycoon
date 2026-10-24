@@ -3,6 +3,11 @@
 Each version is a frozen copy in `versions/pe-tycoon-vX.Y.html`. Open any of them in a browser to play that version.
 `pe-tycoon.html` in this folder is always the latest one (the one published online).
 
+## v2.1.4 — 2026-10-24
+- Fixed the firm name box on the title screen sticking out past its panel.
+- Now also hosted on GitHub Pages: https://newbieoo7.github.io/pe-tycoon/
+- Saves from v2.1.3 carry over.
+
 ## v2.1.3 — 2026-10-22
 - Borrowing − / + buttons now move the debt by one visible step per tap ($0.1M under $100M, $1M under $1B, $0.01B above), snapping to that step. Before, each tap moved it by about $30K, which didn't show in the rounded amount.
 - The borrowing slider and its buttons span the full card width, with a thicker track and a larger handle.
